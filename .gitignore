@@ -216,3 +216,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Codex
+.codex/*
+!.codex/
+!.codex/README.md
+!.codex/*.md
+!.codex/settings.json
