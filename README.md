@@ -29,4 +29,20 @@
 
 ## 팀원
 
-- 이이삭
+### Team Leader
+
+박하원
+
+### Frontend
+
+Senior : 김수연
+Junior : 유소영
+
+### Backend
+
+Senior : 김강우
+Junior : 임우성
+
+### QA, LLM Manager
+
+이이삭
