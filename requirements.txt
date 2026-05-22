@@ -1,0 +1,4 @@
+# Core dependencies
+fastapi
+uvicorn
+gradio
