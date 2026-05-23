@@ -1,9 +1,4 @@
-"""
-간단한 Gradio UI입니다.
-
-실행 예시:
-python frontend/app.py
-"""
+"""Menu Recommendation API를 호출하는 간단한 Gradio UI 예제입니다."""
 
 import json
 from urllib import error, request
@@ -18,8 +13,8 @@ def request_recommend_menu(
     date: str,
     time: str,
     place: str,
-    people_count: int,
-    preferences: str,
+    people_count: str,
+    preference: str,
     avoid_foods: str,
     budget: str,
 ) -> str:
@@ -27,8 +22,8 @@ def request_recommend_menu(
         "date": date,
         "time": time,
         "place": place,
-        "people_count": int(people_count),
-        "preferences": preferences,
+        "people_count": people_count,
+        "preference": preference,
         "avoid_foods": avoid_foods,
         "budget": budget,
     }
@@ -60,26 +55,26 @@ def request_recommend_menu(
 
 with gr.Blocks(title="메뉴 추천 테스트") as demo:
     gr.Markdown("# 메뉴 추천 API 테스트")
-    gr.Markdown("Mock 데이터를 입력하거나 기본값 그대로 전송할 수 있습니다.")
+    gr.Markdown("입력값을 JSON으로 변환해 `/api/recommend-menu`에 POST 요청을 보냅니다.")
 
     with gr.Row():
-        date = gr.Textbox(label="날짜", value="2026-05-17")
+        date = gr.Textbox(label="날짜", value="2025-05-26")
         time = gr.Textbox(label="시간", value="18:00")
 
     with gr.Row():
-        place = gr.Textbox(label="장소", value="강남역")
-        people_count = gr.Number(label="인원 수", value=4, precision=0)
+        place = gr.Textbox(label="장소", value="서울 강남구")
+        people_count = gr.Textbox(label="인원 수", value="2")
 
-    preferences = gr.Textbox(label="선호 음식", value="매운 음식, 고기")
-    avoid_foods = gr.Textbox(label="피해야 할 음식", value="회, 해산물")
-    budget = gr.Textbox(label="예산", value="1인당 15000원")
+    preference = gr.Textbox(label="선호 음식 종류", value="한식")
+    avoid_foods = gr.Textbox(label="피해야 할 음식 또는 식재료", value="해산물, 회, 돼지고기")
+    budget = gr.Textbox(label="총 예산", value="30000")
 
     submit_button = gr.Button("추천 요청", variant="primary")
     output = gr.Code(label="API 응답", language="json")
 
     submit_button.click(
         fn=request_recommend_menu,
-        inputs=[date, time, place, people_count, preferences, avoid_foods, budget],
+        inputs=[date, time, place, people_count, preference, avoid_foods, budget],
         outputs=output,
     )
 
