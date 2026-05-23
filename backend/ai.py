@@ -8,12 +8,23 @@ The backend API should pass request data as a dictionary and call
 from __future__ import annotations
 
 import os
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+def query(question : str) -> str:
+    llm = ChatGoogleGenerativeAI(
+        model = "gemini-2.5-flash",
+        temperature=0.2,
+    )
+    res = llm.invoke(question)
+    return res.content
+  
 def _contains_any(text: str, keywords: list[str]) -> bool:
     normalized = text.replace(" ", "").lower()
     return any(keyword.replace(" ", "").lower() in normalized for keyword in keywords)
