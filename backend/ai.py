@@ -11,12 +11,25 @@ from datetime import datetime, timedelta
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from langchain_google_genai import ChatGoogleGenerativeAI
+
+from dotenv import load_dotenv
+load_dotenv()
 
 KMA_API_URL = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
 KMA_MID_LAND_API_URL = "https://apis.data.go.kr/1360000/MidFcstInfoService/getMidLandFcst"
 KMA_MID_TEMPERATURE_API_URL = "https://apis.data.go.kr/1360000/MidFcstInfoService/getMidTa"
 KMA_SERVICE_KEY_ENV = "KMA_SERVICE_KEY"
 KMA_SERVICE_KEY = ""
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+def query(question : str) -> str:
+    llm = ChatGoogleGenerativeAI(
+        model = "gemini-2.5-flash",
+        temperature=0.2,
+    )
+    res = llm.invoke(question)
+    return res.content
 
 LOCATION_GRID = {
     "서울": {"nx": 60, "ny": 127},
