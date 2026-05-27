@@ -5,7 +5,7 @@
 ### Endpoint
 
 ```http
-POST http://127.0.0.1/api/recommend-menu
+POST http://127.0.0.1:8000/api/recommend-menu
 Content-Type: application/json
 ```
 
@@ -22,6 +22,9 @@ Content-Type: application/json
 | `preference` | `string` | 선호 음식 종류 | `"한식"` |
 | `avoid_foods` | `string` | 피해야 하는 음식 또는 식재료 | `"해산물, 회, 돼지고기"` |
 | `budget` | `string` | 총 예산 | `"30000"` |
+
+백엔드는 `preference`를 호환 입력으로 처리합니다. 신규 프론트엔드 연동에서는
+`preferences` 필드명 사용을 권장합니다.
 
 ### Request Example
 
@@ -92,7 +95,8 @@ Content-Type: application/json
       "place_url": "장소 URL",
       "x": "경도",
       "y": "위도",
-      "matched_menu": "소불고기 정식"
+      "matched_menu": "소불고기 정식",
+      "selection_reason": "입력 장소와 추천 메뉴를 고려해 선택한 음식점입니다."
     },
     {
       "name": "식당 이름",
@@ -103,7 +107,8 @@ Content-Type: application/json
       "place_url": "장소 URL",
       "x": "경도",
       "y": "위도",
-      "matched_menu": "연어 덮밥"
+      "matched_menu": "연어 덮밥",
+      "selection_reason": "입력 장소와 추천 메뉴를 고려해 선택한 음식점입니다."
     }
   ]
 }
@@ -150,45 +155,17 @@ Content-Type: application/json
 | `x` | `string` | 경도 |
 | `y` | `string` | 위도 |
 | `matched_menu` | `string` | 식당과 매칭된 추천 메뉴 |
+| `selection_reason` | `string` | 음식점 선정 이유 |
 
-## Weather Forecast Category Codes
+## Frontend Display Fields
 
-기상청 단기예보 응답의 `item` 데이터는 `category`와 `fcstValue` 조합으로 예보 값을 표현합니다.
-`fcstValue`는 항상 숫자형으로 해석할 수 있는 값이 아니며, `category`에 따라 코드값 또는 한글 문자열이 들어올 수 있습니다.
+프론트엔드 상세 화면 및 지도 이동 기능에서는 아래 응답 필드를 사용합니다.
 
-### Category Meaning
-
-| Category | Meaning | `fcstValue` Description |
-| --- | --- | --- |
-| `TMP` | 1시간 기온 | 섭씨 기온 값 |
-| `UUU` | 동서바람성분 | 동서 방향 바람 성분 값 |
-| `VVV` | 남북바람성분 | 남북 방향 바람 성분 값 |
-| `VEC` | 풍향 | 풍향 각도 값 |
-| `WSD` | 풍속 | 풍속 값 |
-| `SKY` | 하늘상태 | 하늘상태 코드 |
-| `PTY` | 강수형태 | 강수형태 코드 |
-| `POP` | 강수확률 | 강수확률 값 |
-| `WAV` | 파고 | 파고 값 |
-| `PCP` | 1시간 강수량 | `강수없음`, `1mm 미만`, `1.0mm` 같은 강수량 표시 문자열 |
-| `REH` | 습도 | 상대습도 값 |
-| `SNO` | 1시간 신적설 | `적설없음`, `1cm 미만`, `1.0cm` 같은 신적설 표시 문자열 |
-| `TMN` | 일 최저기온 | 섭씨 일 최저기온 값 |
-| `TMX` | 일 최고기온 | 섭씨 일 최고기온 값 |
-
-### `SKY` Values
-
-| `fcstValue` | Meaning |
+| Field | Description |
 | --- | --- |
-| `1` | 맑음 |
-| `3` | 구름많음 |
-| `4` | 흐림 |
+| `menus[].reason` | 메뉴 추천 이유 |
+| `menus[].weather_reason` | 날씨 반영 이유 |
+| `restaurants[].selection_reason` | 음식점 선정 이유 |
+| `restaurants[].place_url` | Kakao 지도 바로가기 URL |
 
-### `PTY` Values
-
-| `fcstValue` | Meaning |
-| --- | --- |
-| `0` | 없음 |
-| `1` | 비 |
-| `2` | 비/눈 |
-| `3` | 눈 |
-| `4` | 소나기 |
+초기화 버튼은 프론트엔드 입력 상태를 초기화하는 기능이므로 별도 백엔드 API가 필요하지 않습니다.
