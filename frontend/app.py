@@ -127,6 +127,10 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
             <span class='badge'>{m.get('category', '')}</span>
             <h3>{m.get('price_estimate', '')}</h3>
             <p>👍 추천도: {m.get('recommend_score', 0)}%</p>
+            <p><b>추천 이유</b><br>
+            {m.get('reason', '추천 이유가 없습니다.')}</p>
+            <p><b>날씨 반영 이유</b><br>
+            {m.get('weather_reason', '날씨 반영 이유가 없습니다.')}</p>
         </div>
         """
 
@@ -134,12 +138,21 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
     restaurant_html = ""
 
     for r in restaurants[:3]:
+        place_url = r.get("place_url", "#")
+
         restaurant_html += f"""
         <div class='restaurant'>
             <b>{r.get('name', '맛집')}</b>
             <span class='badge'>{r.get('category', '')}</span>
             <br>
-            📍 {r.get('address', '')}
+            📍 {r.get('address', '')}<br>
+            ☎️ {r.get('phone', '전화번호 정보 없음')}
+
+            <p><b>선정 이유</b><br>
+            {r.get('selection_reason', '선정 이유가 없습니다.')}</p>
+            <a href="{place_url}" target="_blank">
+                🗺️ 지도 바로가기
+            </a>
         </div>
         """
 
@@ -179,7 +192,7 @@ with gr.Blocks(css=css, title="오늘 뭐 먹지?") as demo:
     with gr.Row():
         with gr.Column(scale=1):
             people = gr.Number(label="👥 인원 수", value=2, precision=0)
-            budget = gr.Number(label="💰 예산", value=30000, precision=0)
+            budget = gr.Number(label="💰 예산", value=30000, precision=0, step=1000)
             date = gr.Textbox(label="📅 날짜", value="2025-05-26")
             time = gr.Textbox(label="🕐 모임 시간", value="13:00")
 
