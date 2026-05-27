@@ -150,3 +150,45 @@ Content-Type: application/json
 | `x` | `string` | 경도 |
 | `y` | `string` | 위도 |
 | `matched_menu` | `string` | 식당과 매칭된 추천 메뉴 |
+
+## Weather Forecast Category Codes
+
+기상청 단기예보 응답의 `item` 데이터는 `category`와 `fcstValue` 조합으로 예보 값을 표현합니다.
+`fcstValue`는 항상 숫자형으로 해석할 수 있는 값이 아니며, `category`에 따라 코드값 또는 한글 문자열이 들어올 수 있습니다.
+
+### Category Meaning
+
+| Category | Meaning | `fcstValue` Description |
+| --- | --- | --- |
+| `TMP` | 1시간 기온 | 섭씨 기온 값 |
+| `UUU` | 동서바람성분 | 동서 방향 바람 성분 값 |
+| `VVV` | 남북바람성분 | 남북 방향 바람 성분 값 |
+| `VEC` | 풍향 | 풍향 각도 값 |
+| `WSD` | 풍속 | 풍속 값 |
+| `SKY` | 하늘상태 | 하늘상태 코드 |
+| `PTY` | 강수형태 | 강수형태 코드 |
+| `POP` | 강수확률 | 강수확률 값 |
+| `WAV` | 파고 | 파고 값 |
+| `PCP` | 1시간 강수량 | `강수없음`, `1mm 미만`, `1.0mm` 같은 강수량 표시 문자열 |
+| `REH` | 습도 | 상대습도 값 |
+| `SNO` | 1시간 신적설 | `적설없음`, `1cm 미만`, `1.0cm` 같은 신적설 표시 문자열 |
+| `TMN` | 일 최저기온 | 섭씨 일 최저기온 값 |
+| `TMX` | 일 최고기온 | 섭씨 일 최고기온 값 |
+
+### `SKY` Values
+
+| `fcstValue` | Meaning |
+| --- | --- |
+| `1` | 맑음 |
+| `3` | 구름많음 |
+| `4` | 흐림 |
+
+### `PTY` Values
+
+| `fcstValue` | Meaning |
+| --- | --- |
+| `0` | 없음 |
+| `1` | 비 |
+| `2` | 비/눈 |
+| `3` | 눈 |
+| `4` | 소나기 |
