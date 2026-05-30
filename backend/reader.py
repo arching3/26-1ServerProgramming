@@ -2,7 +2,7 @@ from dotenv import dotenv_values
 from datetime import datetime, timedelta
 import logging
 import os
-import time
+import time as time_module
 from urllib.parse import unquote
 import requests
 
@@ -32,7 +32,7 @@ class KakaoMapAPIReader:
     def search_place(self, place: str) -> dict:
         """Return the first Kakao keyword search document for a place string."""
         logger.info("Kakao place.search_start place=%s timeout=%s", place, REQUEST_TIMEOUT_SECONDS)
-        start = time.perf_counter()
+        start = time_module.perf_counter()
         headers = {
             "Authorization": f"KakaoAK {self.__api_key.strip()}"
         }
@@ -49,7 +49,7 @@ class KakaoMapAPIReader:
             )
             res.raise_for_status()
         except Exception:
-            logger.exception("Kakao place.search_failed place=%s elapsed_seconds=%.3f", place, time.perf_counter() - start)
+            logger.exception("Kakao place.search_failed place=%s elapsed_seconds=%.3f", place, time_module.perf_counter() - start)
             raise
 
         documents = res.json()["documents"]
@@ -61,7 +61,7 @@ class KakaoMapAPIReader:
             place,
             res.status_code,
             len(documents),
-            time.perf_counter() - start,
+            time_module.perf_counter() - start,
         )
         return documents[0]
 
@@ -119,7 +119,7 @@ class ShortWeatherAPIReader():
             }
         """
         logger.info("KMA weather.get_start date=%s time=%s place=%s", date, time, place)
-        start = time.perf_counter()
+        start = time_module.perf_counter()
         base_date, base_time = self._get_latest_basetime()
         nx, ny = self.kakao_reader.get_coord_place_nxny(place)
         logger.info(
@@ -151,7 +151,7 @@ class ShortWeatherAPIReader():
             response.raise_for_status()
             res = response.json()["response"]
         except Exception:
-            logger.exception("KMA weather.request_failed elapsed_seconds=%.3f", time.perf_counter() - start)
+            logger.exception("KMA weather.request_failed elapsed_seconds=%.3f", time_module.perf_counter() - start)
             raise
         header, body = (res["header"], res["body"])
         item_list = body["items"]["item"]
@@ -216,6 +216,6 @@ class ShortWeatherAPIReader():
             condition,
             temperature,
             rain_probability,
-            time.perf_counter() - start,
+            time_module.perf_counter() - start,
         )
         return rst

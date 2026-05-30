@@ -1,7 +1,7 @@
 """Weather service wrapper used by the backend API layer."""
 
 import logging
-import time
+import time as time_module
 from typing import Any
 
 from backend.reader import ShortWeatherAPIReader
@@ -22,17 +22,17 @@ def get_weather(date: str, time: str, place: str) -> dict[str, Any]:
     """
     # Keep API-facing code independent from the concrete reader class.
     logger.info("weather.get_start date=%s time=%s place=%s", date, time, place)
-    start = time.perf_counter()
+    start = time_module.perf_counter()
     reader = ShortWeatherAPIReader()
     try:
         weather = reader.get(date, time, place)
     except Exception:
-        logger.exception("weather.get_failed elapsed_seconds=%.3f", time.perf_counter() - start)
+        logger.exception("weather.get_failed elapsed_seconds=%.3f", time_module.perf_counter() - start)
         raise
     logger.info(
         "weather.get_done source=%s condition=%s elapsed_seconds=%.3f",
         weather.get("source"),
         weather.get("condition"),
-        time.perf_counter() - start,
+        time_module.perf_counter() - start,
     )
     return weather
