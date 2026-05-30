@@ -7,6 +7,7 @@ uvicorn backend.main:app --reload
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -63,29 +64,33 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log backend requests and capture unhandled errors."""
+    start = time.perf_counter()
     try:
         response = await call_next(request)
     except Exception:
         logger.exception(
-            "Unhandled backend error method=%s path=%s",
+            "Unhandled backend error method=%s path=%s elapsed_seconds=%.3f",
             request.method,
             request.url.path,
+            time.perf_counter() - start,
         )
         raise
 
     if response.status_code >= 500:
         logger.error(
-            "Backend response error method=%s path=%s status=%s",
+            "Backend response error method=%s path=%s status=%s elapsed_seconds=%.3f",
             request.method,
             request.url.path,
             response.status_code,
+            time.perf_counter() - start,
         )
     else:
         logger.info(
-            "Backend request method=%s path=%s status=%s",
+            "Backend request method=%s path=%s status=%s elapsed_seconds=%.3f",
             request.method,
             request.url.path,
             response.status_code,
+            time.perf_counter() - start,
         )
     return response
 

@@ -22,7 +22,7 @@ class KakaoMapAPIReader:
 
     def __init__(self, api_key: str | None = None):
         if api_key is None:
-            api_key = KEYS["KAKAO_REST_API_KEY"]
+            api_key = KEYS.get("KAKAO_REST_API_KEY")
         if not api_key:
             raise ValueError("KAKAO_REST_API_KEY was not found.")
 
@@ -84,14 +84,10 @@ class ShortWeatherAPIReader():
     __pty = {0:"없음", 1:'비', 2:"비/눈", 3:'눈', 4:"소나기"}
     def __init__(self, api_key=None):
         if api_key is None:
-            api_key = KEYS["KMA_SHORT_API_KEY_ENCODE"]
-            backup_api_key = KEYS["KMA_SHORT_API_KEY_DECODE"]
-        else:
-            backup_api_key = None
+            api_key = KEYS.get("KMA_SHORT_API_KEY_ENCODE")
         if not api_key:
             raise ValueError("KMA API key was not found.")
         self.__api_key = api_key
-        self.__backup_api_key = backup_api_key
         self.url = "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
         self.kakao_reader = KakaoMapAPIReader()
     def _get_latest_basetime(self, now: datetime | None = None) -> tuple[str, str]:
@@ -153,7 +149,7 @@ class ShortWeatherAPIReader():
         except Exception:
             logger.exception("KMA weather.request_failed elapsed_seconds=%.3f", time_module.perf_counter() - start)
             raise
-        header, body = (res["header"], res["body"])
+        body = res["body"]
         item_list = body["items"]["item"]
         parsing = {}
         for item in item_list:
@@ -201,6 +197,7 @@ class ShortWeatherAPIReader():
         rst = {
             "date": target_datetime.strftime("%Y.%m.%d"),
             "time": target_datetime.strftime("%H:%M"),
+            "place": place,
             "places": place,
             "condition": condition,
             "temperature": temperature,
