@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, root_validator
 
 from backend.ai import make_restaurant_reason, recommend_menus_with_weather
+from backend.google_places import enrich_restaurants_with_google_ratings
 from backend.place import match_restaurants_to_menus, search_nearby_restaurants
 from backend.weather import get_weather
 
@@ -93,6 +94,7 @@ def get_service_info() -> dict:
         "environment_variables": {
             "KMA_API_KEY": "기상청 API 키. 없으면 mock 날씨를 사용합니다.",
             "KAKAO_REST_API_KEY": "Kakao REST API 키. 없으면 mock 음식점을 사용합니다.",
+            "GOOGLE_MAPS_API_KEY": "Google Places API 키. 있으면 음식점 Google 평점을 보강합니다.",
             "LLM_API_KEY": "향후 실제 LLM API 연동 시 사용할 키입니다. 현재는 mock LLM을 사용합니다.",
             "LLM_MODEL": "향후 실제 LLM API 연동 시 사용할 모델명입니다. 현재는 mock LLM을 사용합니다.",
         },
@@ -115,6 +117,7 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     """Run the full recommendation flow and return internal response data."""
     weather = get_weather(data.date, data.time, data.place)
     restaurant_candidates = search_nearby_restaurants(data.place)
+    restaurant_candidates = enrich_restaurants_with_google_ratings(restaurant_candidates)
 
     menu_result = recommend_menus_with_weather(
         date=data.date,

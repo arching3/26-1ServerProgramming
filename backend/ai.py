@@ -145,6 +145,22 @@ def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
     return _normalize_llm_menus(parsed, weather)
 
 
+def _format_restaurant_candidate(restaurant: dict, place: str) -> str:
+    rating = restaurant.get("google_rating")
+    rating_count = restaurant.get("google_user_rating_count")
+    rating_text = "Google 평점 없음"
+    if rating is not None:
+        rating_text = f"Google 평점 {rating}"
+        if rating_count is not None:
+            rating_text += f", 평가수 {rating_count}"
+
+    return (
+        f"- {restaurant.get('name', '')} | {restaurant.get('category', '')} | "
+        f"{restaurant.get('road_address') or restaurant.get('address') or place} | "
+        f"{rating_text}"
+    )
+
+
 def _build_menu_prompt(
     date: str,
     time: str,
@@ -164,10 +180,7 @@ def _build_menu_prompt(
     output_example = json.dumps(MENU_OUTPUT_EXAMPLE, ensure_ascii=False)
     restaurant_candidates = restaurant_candidates or []
     restaurant_text = "\n".join(
-        (
-            f"- {restaurant.get('name', '')} | {restaurant.get('category', '')} | "
-            f"{restaurant.get('road_address') or restaurant.get('address') or place}"
-        )
+        _format_restaurant_candidate(restaurant, place)
         for restaurant in restaurant_candidates[:10]
         if restaurant.get("name")
     )
@@ -188,6 +201,7 @@ def _build_menu_prompt(
                 "선호={preferences}, 제외={avoid_foods}, 예산={budget}, 날씨={weather_summary}\n"
                 "Kakao Map 음식점 후보:\n{restaurant_text}\n"
                 "규칙: 선호와 제외 음식을 우선 반영한다. "
+                "음식점은 메뉴 적합성을 우선하되, Google 평점과 평가수가 있으면 음식점 선택 근거에 반영한다. "
                 "weather_reason에는 반드시 날씨 내용을 넣는다. "
                 "restaurant_name은 반드시 후보 줄의 첫 번째 값인 상호명 전체를 글자 하나도 바꾸지 말고 그대로 사용한다. "
                 "출력 JSON 형식: {output_example}",
@@ -305,7 +319,12 @@ def recommend_menus_with_weather(
         if len(restaurant_candidates) >= index:
             restaurant = restaurant_candidates[index - 1]
             menu["restaurant_name"] = restaurant.get("name", "")
-            menu["restaurant_reason"] = "Kakao Map 후보 상호명 중 fallback 메뉴와 함께 검토한 곳입니다."
+            rating = restaurant.get("google_rating")
+            rating_text = f" Google 평점 {rating}점을 함께 참고했습니다." if rating else ""
+            menu["restaurant_reason"] = (
+                "Kakao Map 후보 상호명 중 fallback 메뉴와 함께 검토한 곳입니다."
+                f"{rating_text}"
+            )
         menus.append(menu)
 
     menus = _filter_avoided(menus, avoid_foods)
@@ -348,11 +367,20 @@ def make_restaurant_reason(
     category = restaurant.get("category", "")
     address = restaurant.get("road_address") or restaurant.get("address") or place
     weather_summary = weather.get("summary", "날씨 정보를 참고했습니다.")
+    google_rating = restaurant.get("google_rating")
+    google_user_rating_count = restaurant.get("google_user_rating_count")
+    rating_reason = ""
+    if google_rating:
+        rating_reason = f" Google 평점 {google_rating}점"
+        if google_user_rating_count:
+            rating_reason += f"과 평가수 {google_user_rating_count}건"
+        rating_reason += "도 함께 참고했습니다."
 
     return (
         f"{name}은(는) {matched_menu} 메뉴와 연결해 검토한 음식점입니다. "
         f"카테고리 정보({category})와 위치({address})가 입력한 방문 지역 {place}와 맞고, "
         f"{people_count}명이 {time}에 식사하기 위한 예산({budget}) 조건을 함께 고려했습니다. "
+        f"{rating_reason} "
         f"피해야 하는 항목({avoid_foods})은 메뉴 선택 시 제외 대상으로 보며, "
         f"날씨 조건도 함께 반영했습니다: {weather_summary}"
     )
