@@ -1,8 +1,43 @@
 import gradio as gr
+import logging
+import sys
+from pathlib import Path
+
 import requests
 
 # 백엔드 API 주소
 API_URL = "http://127.0.0.1:8000/api/recommend-menu"
+
+
+def configure_logging():
+    project_root = Path(__file__).resolve().parents[1]
+    logs_dir = project_root / "logs"
+    logs_dir.mkdir(exist_ok=True)
+
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s"
+    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    if not any(getattr(handler, "_project_stdout", False) for handler in root_logger.handlers):
+        stdout_handler = logging.StreamHandler(sys.stdout)
+        stdout_handler.setLevel(logging.INFO)
+        stdout_handler.setFormatter(formatter)
+        stdout_handler._project_stdout = True
+        root_logger.addHandler(stdout_handler)
+
+    if not any(getattr(handler, "_project_error_file", False) for handler in root_logger.handlers):
+        error_handler = logging.FileHandler(logs_dir / "error.log", encoding="utf-8")
+        error_handler.setLevel(logging.ERROR)
+        error_handler.setFormatter(formatter)
+        error_handler._project_error_file = True
+        root_logger.addHandler(error_handler)
+
+    return logging.getLogger("frontend")
+
+
+logger = configure_logging()
 
 # CSS 디자인
 css = """
@@ -159,14 +194,26 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
         "avoid_foods": str(avoid_foods),
         "budget": str(budget)
     }
+    logger.info(
+        "Frontend recommendation request place=%s people=%s cuisines=%s",
+        region,
+        people,
+        preference,
+    )
 
     # 2. API 요청
     try:
         res = requests.post(API_URL, json=payload, timeout=10)
         res.raise_for_status()
         data = res.json()
+        logger.info(
+            "Frontend recommendation response menus=%s restaurants=%s",
+            len(data.get("menus", [])),
+            len(data.get("restaurants", [])),
+        )
 
     except Exception as e:
+        logger.exception("Frontend API request failed")
         return f"""
         <div class='card'>
             <h2>⚠️ API 연결 오류</h2>
