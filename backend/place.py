@@ -16,6 +16,13 @@ KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
 REQUEST_TIMEOUT_SECONDS = 60
 logger = logging.getLogger("backend.place")
 
+PREFERENCE_KEYWORDS = {
+    "한식": ["한식", "백반", "국밥", "찌개"],
+    "중식": ["중식", "중국집", "짜장면", "짬뽕", "탕수육"],
+    "일식": ["일식", "초밥", "라멘", "돈카츠", "우동"],
+    "양식": ["양식", "파스타", "스테이크", "피자", "브런치"],
+}
+
 
 def _mock_restaurants(place: str, menus: list[dict] | None, size: int) -> list[dict]:
     restaurants = []
@@ -106,17 +113,56 @@ def _append_unique_restaurants(
     return False
 
 
-def search_nearby_restaurants(place: str, size: int = 10) -> list[dict]:
-    """Search restaurant candidates around a frontend place string."""
-    logger.info("nearby restaurants.search_start place=%s size=%s", place, size)
-    start = time.perf_counter()
-    restaurants: list[dict] = []
-    seen_keys: set[str] = set()
-    queries = [
+def _split_preferences(preferences: str) -> list[str]:
+    return [item.strip() for item in preferences.split(",") if item.strip()]
+
+
+def _preference_keywords(preferences: str) -> list[str]:
+    keywords = []
+    for preference in _split_preferences(preferences):
+        keywords.extend(PREFERENCE_KEYWORDS.get(preference, [preference]))
+    return list(dict.fromkeys(keywords))
+
+
+def restaurant_matches_preferences(restaurant: dict, preferences: str) -> bool:
+    """Return whether a Kakao restaurant category/name matches food preferences."""
+    keywords = _preference_keywords(preferences)
+    if not keywords:
+        return True
+
+    target = f"{restaurant.get('name', '')} {restaurant.get('category', '')}"
+    return any(keyword in target for keyword in keywords)
+
+
+def _restaurant_preference_score(restaurant: dict, preferences: str) -> int:
+    return 1 if restaurant_matches_preferences(restaurant, preferences) else 0
+
+
+def _build_nearby_queries(place: str, preferences: str) -> list[str]:
+    preference_queries = [
+        f"{place} {keyword}"
+        for keyword in _preference_keywords(preferences)
+    ]
+    generic_queries = [
         f"{place} 음식점",
         f"{place} 맛집",
         f"{place} 식당",
     ]
+    return preference_queries + generic_queries
+
+
+def search_nearby_restaurants(place: str, preferences: str = "", size: int = 10) -> list[dict]:
+    """Search restaurant candidates around a frontend place string."""
+    logger.info(
+        "nearby restaurants.search_start place=%s preferences=%s size=%s",
+        place,
+        preferences,
+        size,
+    )
+    start = time.perf_counter()
+    restaurants: list[dict] = []
+    seen_keys: set[str] = set()
+    queries = _build_nearby_queries(place, preferences)
 
     try:
         for query in queries:
@@ -129,19 +175,30 @@ def search_nearby_restaurants(place: str, size: int = 10) -> list[dict]:
                 size=size,
             ):
                 logger.info(
-                    "nearby restaurants.search_done place=%s count=%s elapsed_seconds=%.3f",
+                    "nearby restaurants.search_done place=%s preferences=%s count=%s elapsed_seconds=%.3f",
                     place,
+                    preferences,
                     len(restaurants),
                     time.perf_counter() - start,
                 )
-                return restaurants
+                return sorted(
+                    restaurants,
+                    key=lambda restaurant: _restaurant_preference_score(restaurant, preferences),
+                    reverse=True,
+                )
     except Exception:
         logger.exception("nearby restaurants.search_failed_using_mock place=%s", place)
         return _mock_restaurants(place, None, size)
 
+    restaurants = sorted(
+        restaurants,
+        key=lambda restaurant: _restaurant_preference_score(restaurant, preferences),
+        reverse=True,
+    )
     logger.info(
-        "nearby restaurants.search_done place=%s count=%s elapsed_seconds=%.3f",
+        "nearby restaurants.search_done place=%s preferences=%s count=%s elapsed_seconds=%.3f",
         place,
+        preferences,
         len(restaurants),
         time.perf_counter() - start,
     )
@@ -151,13 +208,15 @@ def search_nearby_restaurants(place: str, size: int = 10) -> list[dict]:
 def match_restaurants_to_menus(
     restaurants: list[dict],
     menus: list[dict],
+    preferences: str = "",
     size: int = 5,
 ) -> list[dict]:
     """Return Kakao restaurant candidates linked to LLM menu recommendations."""
     logger.info(
-        "restaurants.match_start restaurants=%s menus=%s size=%s",
+        "restaurants.match_start restaurants=%s menus=%s preferences=%s size=%s",
         len(restaurants),
         len(menus),
+        preferences,
         size,
     )
     matched = []
@@ -172,7 +231,13 @@ def match_restaurants_to_menus(
         if menu.get("restaurant_name")
     ]
 
-    for restaurant in restaurants:
+    sorted_restaurants = sorted(
+        restaurants,
+        key=lambda restaurant: _restaurant_preference_score(restaurant, preferences),
+        reverse=True,
+    )
+
+    for restaurant in sorted_restaurants:
         restaurant_name = str(restaurant.get("name", ""))
         normalized_restaurant_name = normalize_name(restaurant_name)
         menu = next(
@@ -200,7 +265,7 @@ def match_restaurants_to_menus(
             logger.info("restaurants.match_done count=%s", len(matched))
             return matched
 
-    for restaurant in restaurants:
+    for restaurant in sorted_restaurants:
         dedupe_key = restaurant.get("place_url") or f"{restaurant.get('name')}:{restaurant.get('address')}"
         if dedupe_key in seen_keys:
             continue
@@ -221,7 +286,7 @@ def search_restaurants(place: str, menus: list[dict], size: int = 5) -> list[dic
     1. place + restaurant keywords
     2. place + recommended menu/category keywords
     """
-    nearby_restaurants = search_nearby_restaurants(place, max(size, 10))
+    nearby_restaurants = search_nearby_restaurants(place, size=max(size, 10))
     if not menus:
         return nearby_restaurants[:size]
 

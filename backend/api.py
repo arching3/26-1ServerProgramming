@@ -137,7 +137,7 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     )
 
     restaurant_start = time.perf_counter()
-    restaurant_candidates = search_nearby_restaurants(data.place)
+    restaurant_candidates = search_nearby_restaurants(data.place, data.preferences)
     logger.info(
         "recommend_api.kakao_done candidates=%s elapsed_seconds=%.3f",
         len(restaurant_candidates),
@@ -173,7 +173,7 @@ def recommend_menu_api(data: MenuRequest) -> dict:
         time.perf_counter() - llm_start,
     )
 
-    restaurants = match_restaurants_to_menus(restaurant_candidates, menus)
+    restaurants = match_restaurants_to_menus(restaurant_candidates, menus, data.preferences)
     for restaurant in restaurants:
         restaurant["selection_reason"] = make_restaurant_reason(
             restaurant=restaurant,
