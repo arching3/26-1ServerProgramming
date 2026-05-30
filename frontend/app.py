@@ -1,7 +1,7 @@
 import gradio as gr
 import logging
 import sys
-import time
+import time as time_module
 from pathlib import Path
 
 import requests
@@ -204,7 +204,7 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
     )
 
     # 2. API 요청
-    start = time.perf_counter()
+    start = time_module.perf_counter()
     try:
         logger.info("Frontend API call.start url=%s timeout=%s", API_URL, API_TIMEOUT_SECONDS)
         res = requests.post(API_URL, json=payload, timeout=API_TIMEOUT_SECONDS)
@@ -214,11 +214,11 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
             "Frontend recommendation response menus=%s restaurants=%s elapsed_seconds=%.3f",
             len(data.get("menus", [])),
             len(data.get("restaurants", [])),
-            time.perf_counter() - start,
+            time_module.perf_counter() - start,
         )
 
     except Exception as e:
-        logger.exception("Frontend API request failed elapsed_seconds=%.3f", time.perf_counter() - start)
+        logger.exception("Frontend API request failed elapsed_seconds=%.3f", time_module.perf_counter() - start)
         return f"""
         <div class='card'>
             <h2>⚠️ API 연결 오류</h2>
