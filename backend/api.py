@@ -1,17 +1,12 @@
-"""API-facing business flow for menu recommendation."""
+"""API boundary for menu recommendation."""
 
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any
 
 from pydantic import BaseModel, root_validator
 
-from backend.ai import make_restaurant_reason, recommend_menus_with_weather
-from backend.google_places import enrich_restaurants_with_google_ratings
-from backend.place import match_restaurants_to_menus, search_nearby_restaurants
-from backend.weather import get_weather
+from backend.recommendation_flow import recommend_menu_flow
 
 logger = logging.getLogger("backend.api")
 
@@ -97,134 +92,18 @@ def get_service_info() -> dict:
             },
         },
         "environment_variables": {
-            "KMA_API_KEY": "기상청 API 키. 없으면 mock 날씨를 사용합니다.",
+            "KMA_SHORT_API_KEY_ENCODE": "기상청 단기예보 API 인코딩 키입니다.",
             "KAKAO_REST_API_KEY": "Kakao REST API 키. 없으면 mock 음식점을 사용합니다.",
             "GOOGLE_MAPS_API_KEY": "Google Places API 키. 있으면 음식점 Google 평점을 보강합니다.",
-            "LLM_API_KEY": "향후 실제 LLM API 연동 시 사용할 키입니다. 현재는 mock LLM을 사용합니다.",
-            "LLM_MODEL": "향후 실제 LLM API 연동 시 사용할 모델명입니다. 현재는 mock LLM을 사용합니다.",
+            "GOOGLE_API_KEY": "Gemini LLM 호출에 사용할 Google API 키입니다.",
+            "GEMINI_API_KEY": "GOOGLE_API_KEY 대신 사용할 수 있는 Gemini API 키입니다.",
+            "OPENAI_API_KEY": "Gemini 실패 시 OpenAI fallback 호출에 사용할 키입니다.",
         },
     }
     logger.info("get_service_info.done apis=%s", len(info["apis"]))
     return info
 
 
-def _request_to_input_dict(data: MenuRequest) -> dict[str, Any]:
-    logger.info("_request_to_input_dict.start place=%s", data.place)
-    result = {
-        "date": data.date,
-        "time": data.time,
-        "place": data.place,
-        "people_count": data.people_count,
-        "preferences": data.preferences,
-        "avoid_foods": data.avoid_foods,
-        "budget": data.budget,
-    }
-    logger.info("_request_to_input_dict.done keys=%s", len(result))
-    return result
-
-
 def recommend_menu_api(data: MenuRequest) -> dict:
     """Run the full recommendation flow and return internal response data."""
-    logger.info(
-        "recommend_api.start place=%s people=%s preferences=%s budget=%s",
-        data.place,
-        data.people_count,
-        data.preferences,
-        data.budget,
-    )
-    start = time.perf_counter()
-
-    weather_start = time.perf_counter()
-    logger.info("recommend_api.weather_start")
-    weather = get_weather(data.date, data.time, data.place)
-    logger.info(
-        "recommend_api.weather_done source=%s elapsed_seconds=%.3f",
-        weather.get("source"),
-        time.perf_counter() - weather_start,
-    )
-
-    restaurant_start = time.perf_counter()
-    logger.info("recommend_api.kakao_start")
-    restaurant_candidates = search_nearby_restaurants(data.place, data.preferences)
-    logger.info(
-        "recommend_api.kakao_done candidates=%s candidate_names=%s elapsed_seconds=%.3f",
-        len(restaurant_candidates),
-        [restaurant.get("name") for restaurant in restaurant_candidates[:5]],
-        time.perf_counter() - restaurant_start,
-    )
-
-    google_start = time.perf_counter()
-    logger.info("recommend_api.google_start candidates=%s", len(restaurant_candidates))
-    restaurant_candidates = enrich_restaurants_with_google_ratings(restaurant_candidates)
-    logger.info(
-        "recommend_api.google_done candidates=%s rated=%s elapsed_seconds=%.3f",
-        len(restaurant_candidates),
-        sum(1 for restaurant in restaurant_candidates if restaurant.get("google_rating") is not None),
-        time.perf_counter() - google_start,
-    )
-
-    llm_start = time.perf_counter()
-    logger.info("recommend_api.menu_start candidates=%s", len(restaurant_candidates))
-    menu_result = recommend_menus_with_weather(
-        date=data.date,
-        time=data.time,
-        place=data.place,
-        people_count=data.people_count,
-        preferences=data.preferences,
-        avoid_foods=data.avoid_foods,
-        budget=data.budget,
-        weather=weather,
-        restaurant_candidates=restaurant_candidates,
-    )
-    menus = menu_result["menus"]
-    logger.info(
-        "recommend_api.menu_done source=%s menus=%s menu_names=%s elapsed_seconds=%.3f",
-        menu_result.get("source", "fallback"),
-        len(menus),
-        [menu.get("name") for menu in menus],
-        time.perf_counter() - llm_start,
-    )
-
-    match_start = time.perf_counter()
-    logger.info("recommend_api.restaurant_match_start menus=%s candidates=%s", len(menus), len(restaurant_candidates))
-    restaurants = match_restaurants_to_menus(restaurant_candidates, menus, data.preferences)
-    logger.info(
-        "recommend_api.restaurant_match_done restaurants=%s restaurant_names=%s elapsed_seconds=%.3f",
-        len(restaurants),
-        [restaurant.get("name") for restaurant in restaurants],
-        time.perf_counter() - match_start,
-    )
-
-    reason_start = time.perf_counter()
-    logger.info("recommend_api.restaurant_reason_start restaurants=%s", len(restaurants))
-    for restaurant in restaurants:
-        restaurant["selection_reason"] = make_restaurant_reason(
-            restaurant=restaurant,
-            matched_menu=restaurant.get("matched_menu", ""),
-            people_count=data.people_count,
-            budget=data.budget,
-            preferences=data.preferences,
-            avoid_foods=data.avoid_foods,
-            place=data.place,
-            time=data.time,
-            weather=weather,
-        )
-    logger.info(
-        "recommend_api.restaurant_reason_done restaurants=%s elapsed_seconds=%.3f",
-        len(restaurants),
-        time.perf_counter() - reason_start,
-    )
-
-    result = {
-        "input": _request_to_input_dict(data),
-        "weather": weather,
-        "menus": menus,
-        "restaurants": restaurants,
-    }
-    logger.info(
-        "recommend_api.done menus=%s restaurants=%s elapsed_seconds=%.3f",
-        len(menus),
-        len(restaurants),
-        time.perf_counter() - start,
-    )
-    return result
+    return recommend_menu_flow(data)

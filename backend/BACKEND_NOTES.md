@@ -4,7 +4,7 @@
 
 - `backend/`에 FastAPI 백엔드 구조가 추가되었습니다.
 - 환경변수 예시와 백엔드 의존성 파일은 `backend/백앤드_외부_환경_파일/`에 있습니다.
-- 실제 API 키가 없어도 mock 데이터로 실행 가능합니다.
+- Kakao 음식점 검색과 LLM 메뉴 추천에는 fallback이 있으며, 기상청 단기예보 조회에는 API 키가 필요합니다.
 
 ```text
 backend/
@@ -12,6 +12,13 @@ backend/
 ├── main.py
 ├── api.py
 ├── ai.py
+├── recommendation_flow.py
+├── recommendation/
+│   ├── __init__.py
+│   ├── menus.py
+│   ├── prompts.py
+│   ├── fallback.py
+│   └── reasons.py
 ├── weather.py
 ├── place.py
 └── 백앤드_외부_환경_파일/
@@ -32,21 +39,23 @@ backend/
 필요한 환경변수:
 
 ```text
-KMA_API_KEY=
+KMA_SHORT_API_KEY_ENCODE=
 KAKAO_REST_API_KEY=
-LLM_API_KEY=
-LLM_MODEL=
 GOOGLE_API_KEY=
+GEMINI_API_KEY=
+OPENAI_API_KEY=
+GOOGLE_MAPS_API_KEY=
 ```
 
 ## 현재 동작 방식
 
-- 현재 LLM은 실제 API가 아니라 mock 함수로 동작합니다.
-- `LLM_API_KEY`, `LLM_MODEL`은 나중에 실제 LLM 연동을 위해 미리 잡아둔 값입니다.
-- 기상청 API 키가 없으면 mock weather가 반환됩니다.
+- LLM은 Gemini를 먼저 호출하고, 실패하면 OpenAI fallback을 시도합니다.
+- LLM 호출이 실패하거나 응답이 유효하지 않으면 rule-based fallback 메뉴를 반환합니다.
+- `GOOGLE_API_KEY` 또는 `GEMINI_API_KEY`는 Gemini LLM 호출에 사용합니다.
+- `OPENAI_API_KEY`는 OpenAI fallback 호출에 사용합니다.
+- `GOOGLE_MAPS_API_KEY`는 Google Places 평점 보강에 사용합니다.
 - Kakao API 키가 없으면 mock restaurants가 반환됩니다.
-- mock 응답이라도 전체 API 흐름은 정상 테스트 가능합니다.
-- `LOCATION_CODE_MAP`은 날씨 API 응답값이 아니라, 입력 장소를 기상청 중기예보 `regId`로 바꾸기 위한 지역 코드 매핑입니다.
+- 기상청 단기예보 조회에는 `KMA_SHORT_API_KEY_ENCODE`가 필요합니다.
 
 ## 실행 방법
 
@@ -122,10 +131,17 @@ restaurants[].place_url
 ## 파일별 역할
 
 - `backend/main.py`: FastAPI 앱 생성, CORS 설정, 라우팅 연결
-- `backend/api.py`: 요청 모델, `/info`, 전체 추천 흐름 담당
-- `backend/weather.py`: 기상청 중기예보 API 구조와 mock weather fallback
+- `backend/api.py`: 요청 모델, `/info`, 추천 흐름 wrapper
+- `backend/recommendation_flow.py`: 날씨, 음식점 검색, 평점 보강, 메뉴 추천, 음식점 매칭을 묶는 전체 추천 흐름
+- `backend/recommendation/menus.py`: LLM 메뉴 추천 orchestration
+- `backend/recommendation/prompts.py`: LLM prompt와 음식점 후보 문자열 생성
+- `backend/recommendation/fallback.py`: rule-based fallback 메뉴 생성
+- `backend/recommendation/reasons.py`: 음식점 선정 이유 생성
+- `backend/ai.py`: 기존 import 경로 호환 wrapper
+- `backend/weather.py`: 기상청 단기예보 API wrapper
 - `backend/place.py`: Kakao Local API 검색과 mock restaurant fallback
-- `backend/ai.py`: mock 메뉴 추천, 음식점 선정 이유 생성, 향후 LLM 교체 지점
+- `backend/reader.py`: Kakao 장소 좌표 조회와 기상청 단기예보 reader
+- `backend/google_places.py`: Google Places 평점 보강
 - `backend/백앤드_외부_환경_파일/requirements.txt`: 백엔드 실행에 필요한 Python 패키지 목록
 - `backend/백앤드_외부_환경_파일/.env.example`: 팀원 공유용 환경변수 예시
 - `.env`: 개인 로컬 API 키 저장용, Git 업로드 금지
