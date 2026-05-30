@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import json
 import os
-import re
 
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
 except ImportError:
     ChatGoogleGenerativeAI = None
+
+try:
+    from langchain_core.output_parsers import JsonOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+except ImportError:
+    ChatPromptTemplate = None
+    JsonOutputParser = None
 
 from dotenv import load_dotenv
 
@@ -24,15 +30,36 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
-def query(question : str) -> str:
+MENU_OUTPUT_EXAMPLE = {
+    "menus": [
+        {
+            "name": "메뉴명",
+            "category": "한식",
+            "price_estimate": "1인 12000원 내외",
+            "reason": "선호와 예산을 반영한 이유",
+            "weather_reason": "날씨를 반영한 이유",
+            "recommend_score": 95,
+        }
+    ]
+}
+
+
+def _create_llm():
+    """Create Gemini chat model."""
     if ChatGoogleGenerativeAI is None:
         raise RuntimeError("langchain_google_genai package is not installed.")
+    if not GOOGLE_API_KEY:
+        raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY was not found.")
 
-    llm = ChatGoogleGenerativeAI(
+    return ChatGoogleGenerativeAI(
         model = "gemini-2.5-flash",
         temperature=0.2,
         google_api_key=GOOGLE_API_KEY,
     )
+
+
+def query(question : str) -> str:
+    llm = _create_llm()
     res = llm.invoke(question)
     return res.content
   
@@ -52,15 +79,6 @@ def _filter_avoided(menus: list[dict], avoid_foods: str) -> list[dict]:
         if not _contains_any(combined, avoided):
             filtered.append(menu)
     return filtered or menus
-
-
-def _extract_json_text(text: str) -> str:
-    """Extract JSON from a plain response or a markdown code block."""
-    text = text.strip()
-    code_block = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-    if code_block:
-        return code_block.group(1).strip()
-    return text
 
 
 def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
@@ -110,14 +128,59 @@ def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
 
 
 def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
-    """Call Gemini and parse its menu recommendations."""
-    if not GOOGLE_API_KEY:
-        raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY was not found.")
+    """Call Gemini through a LangChain chain and parse recommendations."""
+    if ChatPromptTemplate is None or JsonOutputParser is None:
+        raise RuntimeError("langchain_core package is not installed.")
 
-    answer = query(prompt)
-    json_text = _extract_json_text(answer)
-    parsed = json.loads(json_text)
+    chain = prompt | _create_llm() | JsonOutputParser()
+    parsed = chain.invoke({})
     return _normalize_llm_menus(parsed, weather)
+
+
+def _build_menu_prompt(
+    date: str,
+    time: str,
+    place: str,
+    people_count: int,
+    preferences: str,
+    avoid_foods: str,
+    budget: str,
+    weather: dict,
+):
+    """Build a compact prompt for Gemini menu recommendation."""
+    if ChatPromptTemplate is None:
+        raise RuntimeError("langchain_core package is not installed.")
+
+    weather_summary = weather.get("summary", "")
+    output_example = json.dumps(MENU_OUTPUT_EXAMPLE, ensure_ascii=False)
+
+    return ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "너는 메뉴 추천 AI다. 메뉴 3개를 JSON으로만 추천한다. "
+                "실제 식당 이름은 만들지 말고 메뉴명만 추천한다.",
+            ),
+            (
+                "human",
+                "조건: 날짜={date}, 시간={time}, 장소={place}, 인원={people_count}, "
+                "선호={preferences}, 제외={avoid_foods}, 예산={budget}, 날씨={weather_summary}\n"
+                "규칙: 선호와 제외 음식을 우선 반영한다. "
+                "weather_reason에는 반드시 날씨 내용을 넣는다. "
+                "출력 JSON 형식: {output_example}",
+            ),
+        ]
+    ).partial(
+        date=date,
+        time=time,
+        place=place,
+        people_count=people_count,
+        preferences=preferences,
+        avoid_foods=avoid_foods,
+        budget=budget,
+        weather_summary=weather_summary,
+        output_example=output_example,
+    )
 
 
 def _to_int(value: object, default: int) -> int:
@@ -140,60 +203,20 @@ def recommend_menus_with_weather(
 ) -> dict:
     """Recommend three menus based on request data and weather.
 
-    This currently returns mock data. The prompt is kept separate so a real LLM
-    call can replace the mock return block later without changing the API flow.
+    Gemini is used first. If the LLM is unavailable or returns invalid JSON,
+    the existing rule-based fallback keeps the API response stable.
     """
-    prompt = f"""
-너는 여러 명의 식사 메뉴를 추천해주는 AI이다.
-다음 정보를 바탕으로 메뉴 3개를 추천해라.
-
-날짜: {date}
-시간: {time}
-장소: {place}
-인원수: {people_count}
-선호 음식 종류: {preferences}
-피해야 하는 음식 또는 식재료: {avoid_foods}
-예산: {budget}
-날씨: {weather.get("summary", "")}
-
-조건:
-- preferences를 가장 우선 반영한다.
-- avoid_foods에 포함된 음식 또는 식재료는 추천하지 않는다.
-- 날씨는 보조 조건으로만 반영한다.
-- 추천 이유 또는 날씨 추천 이유에는 반드시 날씨 정보를 포함한다.
-- 실제 식당 이름을 확실히 모르면 식당 이름은 만들지 않는다.
-- 아래 JSON 형식만 반환하고, 설명 문장이나 마크다운은 쓰지 않는다.
-
-{{
-  "menus": [
-    {{
-      "name": "메뉴명",
-      "category": "한식/중식/일식/양식/분식/기타",
-      "price_estimate": "예상 가격",
-      "reason": "사용자 조건을 반영한 추천 이유",
-      "weather_reason": "날씨를 반영한 추천 이유",
-      "recommend_score": 95
-    }},
-    {{
-      "name": "메뉴명",
-      "category": "한식/중식/일식/양식/분식/기타",
-      "price_estimate": "예상 가격",
-      "reason": "사용자 조건을 반영한 추천 이유",
-      "weather_reason": "날씨를 반영한 추천 이유",
-      "recommend_score": 92
-    }},
-    {{
-      "name": "메뉴명",
-      "category": "한식/중식/일식/양식/분식/기타",
-      "price_estimate": "예상 가격",
-      "reason": "사용자 조건을 반영한 추천 이유",
-      "weather_reason": "날씨를 반영한 추천 이유",
-      "recommend_score": 89
-    }}
-  ]
-}}
-"""
     try:
+        prompt = _build_menu_prompt(
+            date=date,
+            time=time,
+            place=place,
+            people_count=people_count,
+            preferences=preferences,
+            avoid_foods=avoid_foods,
+            budget=budget,
+            weather=weather,
+        )
         menus = _recommend_menus_by_llm(prompt, weather)
         menus = _filter_avoided(menus, avoid_foods)
         if len(menus) >= 3:
