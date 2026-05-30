@@ -1,126 +1,39 @@
 import gradio as gr
-import logging
-import sys
-import time as time_module
-from pathlib import Path
-
 import requests
 
 # 백엔드 API 주소
 API_URL = "http://127.0.0.1:8000/api/recommend-menu"
-API_TIMEOUT_SECONDS = 60
-
-
-def configure_logging():
-    project_root = Path(__file__).resolve().parents[1]
-    logs_dir = project_root / "logs"
-    logs_dir.mkdir(exist_ok=True)
-
-    formatter = logging.Formatter(
-        "%(asctime)s %(levelname)s [%(name)s] %(message)s"
-    )
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.INFO)
-
-    if not any(getattr(handler, "_project_stdout", False) for handler in root_logger.handlers):
-        stdout_handler = logging.StreamHandler(sys.stdout)
-        stdout_handler.setLevel(logging.INFO)
-        stdout_handler.setFormatter(formatter)
-        stdout_handler._project_stdout = True
-        root_logger.addHandler(stdout_handler)
-
-    if not any(getattr(handler, "_project_error_file", False) for handler in root_logger.handlers):
-        error_handler = logging.FileHandler(logs_dir / "error.log", encoding="utf-8")
-        error_handler.setLevel(logging.ERROR)
-        error_handler.setFormatter(formatter)
-        error_handler._project_error_file = True
-        root_logger.addHandler(error_handler)
-
-    return logging.getLogger("frontend")
-
-
-logger = configure_logging()
 
 # CSS 디자인
 css = """
-:root {
-    color-scheme: light;
-    --app-bg: #f6f8fb;
-    --panel-bg: #ffffff;
-    --panel-soft: #f8fafc;
-    --text-main: #111827;
-    --text-muted: #4b5563;
-    --border: #e5e7eb;
-    --badge-bg: #e8f2ff;
-    --badge-text: #155e75;
-    --accent: #2563eb;
-    --accent-strong: #0f766e;
-    --card-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-    --menu-bg: linear-gradient(135deg, #ffffff, #eef7ff);
-}
-
-.dark {
-    color-scheme: dark;
-    --app-bg: #111827;
-    --panel-bg: #1f2937;
-    --panel-soft: #273449;
-    --text-main: #f9fafb;
-    --text-muted: #cbd5e1;
-    --border: #374151;
-    --badge-bg: #123344;
-    --badge-text: #7dd3fc;
-    --accent: #60a5fa;
-    --accent-strong: #2dd4bf;
-    --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
-    --menu-bg: linear-gradient(135deg, #1f2937, #243042);
-}
-
-body,
-.gradio-container {
-    background: var(--app-bg) !important;
-    color: var(--text-main) !important;
-}
+body { background: #fafbff; }
 
 #title {
     font-size: 32px;
     font-weight: 800;
-    color: var(--text-main);
-}
-
-.toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    margin-bottom: 18px;
-}
-
-.toolbar .theme-toggle {
-    min-width: 170px;
+    color: #111827;
 }
 
 .card {
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 18px;
     padding: 20px;
-    background: var(--panel-bg);
-    color: var(--text-main);
-    box-shadow: var(--card-shadow);
+    background: white;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.04);
 }
 
 .menu-card {
-    border: 1px solid var(--border);
-    border-radius: 8px;
+    border: 1px solid #ddd6fe;
+    border-radius: 16px;
     padding: 20px;
-    background: var(--menu-bg);
-    color: var(--text-main);
+    background: linear-gradient(135deg, #ffffff, #f7f5ff);
     min-height: 150px;
 }
 
 .badge {
     display: inline-block;
-    background: var(--badge-bg);
-    color: var(--badge-text);
+    background: #ede9fe;
+    color: #4f46e5;
     padding: 5px 10px;
     border-radius: 8px;
     margin-right: 6px;
@@ -129,7 +42,7 @@ body,
 
 .rank {
     display: inline-block;
-    background: var(--accent);
+    background: #5b4bff;
     color: white;
     border-radius: 999px;
     width: 34px;
@@ -141,42 +54,17 @@ body,
 }
 
 .restaurant {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #e5e7eb;
     padding: 16px 0;
 }
 
 .main-btn button {
-    background: linear-gradient(90deg, var(--accent), var(--accent-strong)) !important;
+    background: linear-gradient(90deg, #5b4bff, #8b5cf6) !important;
     color: white !important;
     font-weight: 700 !important;
     border-radius: 12px !important;
 }
-
-.gradio-container input,
-.gradio-container textarea,
-.gradio-container select {
-    background: var(--panel-bg) !important;
-    color: var(--text-main) !important;
-    border-color: var(--border) !important;
-}
-
-.gradio-container label,
-.gradio-container .wrap,
-.gradio-container .prose,
-.gradio-container p,
-.gradio-container h2,
-.gradio-container h3 {
-    color: var(--text-main) !important;
-}
-
-.gradio-container a {
-    color: var(--accent) !important;
-}
 """
-
-
-def keep_theme_value(mode):
-    return mode
 
 # 데이터를 매핑하고 API와 통신하는 함수
 def recommend(people, budget, date, time, cuisines, avoid_foods, region):
@@ -196,29 +84,14 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
         "avoid_foods": str(avoid_foods),
         "budget": str(budget)
     }
-    logger.info(
-        "Frontend recommendation request place=%s people=%s cuisines=%s",
-        region,
-        people,
-        preference,
-    )
 
     # 2. API 요청
-    start = time_module.perf_counter()
     try:
-        logger.info("Frontend API call.start url=%s timeout=%s", API_URL, API_TIMEOUT_SECONDS)
-        res = requests.post(API_URL, json=payload, timeout=API_TIMEOUT_SECONDS)
+        res = requests.post(API_URL, json=payload, timeout=10)
         res.raise_for_status()
         data = res.json()
-        logger.info(
-            "Frontend recommendation response menus=%s restaurants=%s elapsed_seconds=%.3f",
-            len(data.get("menus", [])),
-            len(data.get("restaurants", [])),
-            time_module.perf_counter() - start,
-        )
 
     except Exception as e:
-        logger.exception("Frontend API request failed elapsed_seconds=%.3f", time_module.perf_counter() - start)
         return f"""
         <div class='card'>
             <h2>⚠️ API 연결 오류</h2>
@@ -313,15 +186,8 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
 
 
 # UI 구성
-with gr.Blocks(title="오늘 뭐 먹지?", elem_classes=["light"]) as demo:
-    with gr.Row(elem_classes="toolbar"):
-        gr.HTML("<div id='title'>오늘 뭐 먹지? 🍽️</div>")
-        theme_mode = gr.Radio(
-            choices=["라이트", "다크"],
-            value="라이트",
-            label="테마",
-            elem_classes="theme-toggle",
-        )
+with gr.Blocks(css=css, title="오늘 뭐 먹지?") as demo:
+    gr.HTML("<div id='title'>오늘 뭐 먹지? 🍽️</div>")
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -352,21 +218,6 @@ with gr.Blocks(title="오늘 뭐 먹지?", elem_classes=["light"]) as demo:
         inputs=[people, budget, date, time, cuisines, avoid_foods, region],
         outputs=output
     )
-    theme_mode.change(
-        fn=keep_theme_value,
-        inputs=theme_mode,
-        outputs=theme_mode,
-        js="""
-        (mode) => {
-            const root = document.querySelector('.gradio-container');
-            if (root) {
-                root.classList.toggle('dark', mode === '다크');
-                root.classList.toggle('light', mode !== '다크');
-            }
-            return mode;
-        }
-        """,
-    )
 
 if __name__ == "__main__":
-    demo.launch(css=css)
+    demo.launch()
