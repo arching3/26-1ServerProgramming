@@ -18,6 +18,11 @@ except ImportError:
     ChatGoogleGenerativeAI = None
 
 try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
+
+try:
     from langchain_core.output_parsers import JsonOutputParser
     from langchain_core.prompts import ChatPromptTemplate
 except ImportError:
@@ -31,7 +36,9 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LLM_TIMEOUT_SECONDS = 60
+OPENAI_FALLBACK_MODEL = "gpt-4o-mini"
 logger = logging.getLogger("backend.ai")
 
 MENU_OUTPUT_EXAMPLE = {
@@ -62,6 +69,21 @@ def _create_llm():
         temperature=0.2,
         google_api_key=GOOGLE_API_KEY,
         request_timeout=LLM_TIMEOUT_SECONDS,
+    )
+
+
+def _create_openai_llm():
+    """Create OpenAI chat model for Gemini fallback."""
+    if ChatOpenAI is None:
+        raise RuntimeError("langchain_openai package is not installed.")
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY was not found.")
+
+    return ChatOpenAI(
+        model=OPENAI_FALLBACK_MODEL,
+        temperature=0.2,
+        api_key=OPENAI_API_KEY,
+        timeout=LLM_TIMEOUT_SECONDS,
     )
 
 
@@ -147,26 +169,46 @@ def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
     return menus
 
 
-def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
-    """Call Gemini through a LangChain chain and parse recommendations."""
+def _recommend_menus_with_llm(prompt: str, weather: dict, llm, provider: str) -> list[dict]:
+    """Call an LLM through a LangChain chain and parse recommendations."""
     if ChatPromptTemplate is None or JsonOutputParser is None:
         raise RuntimeError("langchain_core package is not installed.")
 
-    logger.info("LLM menu recommendation.start")
+    logger.info("LLM menu recommendation.start provider=%s", provider)
     start = time.perf_counter()
-    chain = prompt | _create_llm() | JsonOutputParser()
+    chain = prompt | llm | JsonOutputParser()
     try:
         parsed = chain.invoke({})
         menus = _normalize_llm_menus(parsed, weather)
     except Exception:
-        logger.exception("LLM menu recommendation.failed elapsed_seconds=%.3f", time.perf_counter() - start)
+        logger.exception(
+            "LLM menu recommendation.failed provider=%s elapsed_seconds=%.3f",
+            provider,
+            time.perf_counter() - start,
+        )
         raise
     logger.info(
-        "LLM menu recommendation.done elapsed_seconds=%.3f menu_count=%s",
+        "LLM menu recommendation.done provider=%s elapsed_seconds=%.3f menu_count=%s",
+        provider,
         time.perf_counter() - start,
         len(menus),
     )
     return menus
+
+
+def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
+    """Call Gemini and parse recommendations."""
+    return _recommend_menus_with_llm(prompt, weather, _create_llm(), "gemini")
+
+
+def _recommend_menus_by_openai(prompt: str, weather: dict) -> list[dict]:
+    """Call OpenAI and parse recommendations."""
+    return _recommend_menus_with_llm(
+        prompt,
+        weather,
+        _create_openai_llm(),
+        f"openai:{OPENAI_FALLBACK_MODEL}",
+    )
 
 
 def _format_restaurant_candidate(restaurant: dict, place: str) -> str:
@@ -295,15 +337,22 @@ def recommend_menus_with_weather(
             weather=weather,
             restaurant_candidates=restaurant_candidates,
         )
-        menus = _recommend_menus_by_llm(prompt, weather)
+        try:
+            menus = _recommend_menus_by_llm(prompt, weather)
+            source = "gemini"
+        except Exception:
+            logger.exception("recommend_menus.gemini_failed_trying_openai")
+            menus = _recommend_menus_by_openai(prompt, weather)
+            source = "openai"
+
         menus = _filter_avoided(menus, avoid_foods)
         if len(menus) >= 3:
             for index, menu in enumerate(menus[:3], start=1):
                 menu["rank"] = index
-            logger.info("recommend_menus.gemini_success menu_count=%s", len(menus[:3]))
-            return {"menus": menus[:3], "source": "gemini"}
+            logger.info("recommend_menus.llm_success source=%s menu_count=%s", source, len(menus[:3]))
+            return {"menus": menus[:3], "source": source}
     except Exception:
-        logger.exception("recommend_menus.gemini_failed_using_fallback")
+        logger.exception("recommend_menus.llm_failed_using_fallback")
 
     logger.info("recommend_menus.fallback_start preferences=%s", preferences)
     condition = weather.get("condition", "")
