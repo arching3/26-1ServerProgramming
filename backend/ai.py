@@ -59,32 +59,38 @@ MENU_OUTPUT_EXAMPLE = {
 
 def _create_llm():
     """Create Gemini chat model."""
+    logger.info("_create_llm.start provider=gemini model=gemini-2.5-flash")
     if ChatGoogleGenerativeAI is None:
         raise RuntimeError("langchain_google_genai package is not installed.")
     if not GOOGLE_API_KEY:
         raise ValueError("GOOGLE_API_KEY or GEMINI_API_KEY was not found.")
 
-    return ChatGoogleGenerativeAI(
+    llm = ChatGoogleGenerativeAI(
         model = "gemini-2.5-flash",
         temperature=0.2,
         google_api_key=GOOGLE_API_KEY,
         request_timeout=LLM_TIMEOUT_SECONDS,
     )
+    logger.info("_create_llm.done provider=gemini timeout=%s", LLM_TIMEOUT_SECONDS)
+    return llm
 
 
 def _create_openai_llm():
     """Create OpenAI chat model for Gemini fallback."""
+    logger.info("_create_openai_llm.start provider=openai model=%s", OPENAI_FALLBACK_MODEL)
     if ChatOpenAI is None:
         raise RuntimeError("langchain_openai package is not installed.")
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY was not found.")
 
-    return ChatOpenAI(
+    llm = ChatOpenAI(
         model=OPENAI_FALLBACK_MODEL,
         temperature=0.2,
         api_key=OPENAI_API_KEY,
         timeout=LLM_TIMEOUT_SECONDS,
     )
+    logger.info("_create_openai_llm.done provider=openai timeout=%s", LLM_TIMEOUT_SECONDS)
+    return llm
 
 
 def query(question : str) -> str:
@@ -100,13 +106,18 @@ def query(question : str) -> str:
     return res.content
   
 def _contains_any(text: str, keywords: list[str]) -> bool:
+    logger.info("_contains_any.start text_chars=%s keywords=%s", len(text), len(keywords))
     normalized = text.replace(" ", "").lower()
-    return any(keyword.replace(" ", "").lower() in normalized for keyword in keywords)
+    matched = any(keyword.replace(" ", "").lower() in normalized for keyword in keywords)
+    logger.info("_contains_any.done matched=%s", matched)
+    return matched
 
 
 def _filter_avoided(menus: list[dict], avoid_foods: str) -> list[dict]:
+    logger.info("_filter_avoided.start menus=%s avoid_foods=%s", len(menus), bool(avoid_foods))
     avoided = [item.strip() for item in avoid_foods.split(",") if item.strip()]
     if not avoided:
+        logger.info("_filter_avoided.done no_avoided menus=%s", len(menus))
         return menus
 
     filtered = []
@@ -114,11 +125,20 @@ def _filter_avoided(menus: list[dict], avoid_foods: str) -> list[dict]:
         combined = f"{menu['name']} {menu['category']} {menu['reason']}"
         if not _contains_any(combined, avoided):
             filtered.append(menu)
-    return filtered or menus
+    result = filtered or menus
+    logger.info(
+        "_filter_avoided.done avoided=%s before=%s after=%s used_original=%s",
+        len(avoided),
+        len(menus),
+        len(result),
+        not filtered,
+    )
+    return result
 
 
 def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
     """Convert Gemini output to the backend menu response format."""
+    logger.info("_normalize_llm_menus.start raw_type=%s", type(raw_menus).__name__)
     if isinstance(raw_menus, dict):
         raw_menus = raw_menus.get("menus", [])
 
@@ -166,6 +186,11 @@ def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
     if len(menus) != 3:
         raise ValueError("LLM did not return exactly three menus.")
 
+    logger.info(
+        "_normalize_llm_menus.done menus=%s menu_names=%s",
+        len(menus),
+        [menu.get("name") for menu in menus],
+    )
     return menus
 
 
@@ -198,20 +223,31 @@ def _recommend_menus_with_llm(prompt: str, weather: dict, llm, provider: str) ->
 
 def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
     """Call Gemini and parse recommendations."""
-    return _recommend_menus_with_llm(prompt, weather, _create_llm(), "gemini")
+    logger.info("_recommend_menus_by_llm.start provider=gemini")
+    menus = _recommend_menus_with_llm(prompt, weather, _create_llm(), "gemini")
+    logger.info("_recommend_menus_by_llm.done menus=%s", len(menus))
+    return menus
 
 
 def _recommend_menus_by_openai(prompt: str, weather: dict) -> list[dict]:
     """Call OpenAI and parse recommendations."""
-    return _recommend_menus_with_llm(
+    logger.info("_recommend_menus_by_openai.start provider=openai model=%s", OPENAI_FALLBACK_MODEL)
+    menus = _recommend_menus_with_llm(
         prompt,
         weather,
         _create_openai_llm(),
         f"openai:{OPENAI_FALLBACK_MODEL}",
     )
+    logger.info("_recommend_menus_by_openai.done menus=%s", len(menus))
+    return menus
 
 
 def _format_restaurant_candidate(restaurant: dict, place: str) -> str:
+    logger.info(
+        "_format_restaurant_candidate.start name=%s has_rating=%s",
+        restaurant.get("name", ""),
+        restaurant.get("google_rating") is not None,
+    )
     rating = restaurant.get("google_rating")
     rating_count = restaurant.get("google_user_rating_count")
     rating_text = "Google 평점 없음"
@@ -220,11 +256,13 @@ def _format_restaurant_candidate(restaurant: dict, place: str) -> str:
         if rating_count is not None:
             rating_text += f", 평가수 {rating_count}"
 
-    return (
+    formatted = (
         f"- {restaurant.get('name', '')} | {restaurant.get('category', '')} | "
         f"{restaurant.get('road_address') or restaurant.get('address') or place} | "
         f"{rating_text}"
     )
+    logger.info("_format_restaurant_candidate.done chars=%s", len(formatted))
+    return formatted
 
 
 def _build_menu_prompt(
@@ -239,6 +277,13 @@ def _build_menu_prompt(
     restaurant_candidates: list[dict] | None = None,
 ):
     """Build a compact prompt for Gemini menu recommendation."""
+    logger.info(
+        "_build_menu_prompt.start place=%s people=%s preferences=%s candidates=%s",
+        place,
+        people_count,
+        preferences,
+        len(restaurant_candidates or []),
+    )
     if ChatPromptTemplate is None:
         raise RuntimeError("langchain_core package is not installed.")
 
@@ -260,7 +305,7 @@ def _build_menu_prompt(
         len(output_example),
     )
 
-    return ChatPromptTemplate.from_messages(
+    prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
@@ -292,14 +337,20 @@ def _build_menu_prompt(
         restaurant_text=restaurant_text,
         output_example=output_example,
     )
+    logger.info("_build_menu_prompt.done prompt_type=%s", type(prompt).__name__)
+    return prompt
 
 
 def _to_int(value: object, default: int) -> int:
     """Convert a value to int, falling back to default."""
+    logger.info("_to_int.start value_type=%s default=%s", type(value).__name__, default)
     try:
-        return int(value)
+        converted = int(value)
     except (TypeError, ValueError):
+        logger.info("_to_int.done used_default=True result=%s", default)
         return default
+    logger.info("_to_int.done used_default=False result=%s", converted)
+    return converted
 
 
 def recommend_menus_with_weather(
@@ -392,9 +443,16 @@ def recommend_menus_with_weather(
         weather_reason = "추운 날씨를 고려해 따뜻하고 든든한 메뉴를 추천했습니다."
     else:
         weather_reason = "날씨가 무난해 선호 음식 종류와 예산 조건을 우선 반영했습니다."
+    logger.info(
+        "recommend_menus.fallback_weather_reason condition=%s temperature=%s rain_probability=%s",
+        condition,
+        temperature,
+        rain_probability,
+    )
 
     restaurant_candidates = restaurant_candidates or []
     menus = []
+    logger.info("recommend_menus.fallback_build_start candidates=%s", len(restaurant_candidates))
     for index, (name, category, reason) in enumerate(candidates, start=1):
         menu = {
             "rank": index,
@@ -415,6 +473,12 @@ def recommend_menus_with_weather(
                 f"{rating_text}"
             )
         menus.append(menu)
+        logger.info(
+            "recommend_menus.fallback_menu_added rank=%s name=%s restaurant=%s",
+            index,
+            name,
+            menu.get("restaurant_name", ""),
+        )
 
     menus = _filter_avoided(menus, avoid_foods)
     while len(menus) < 3:
@@ -429,6 +493,7 @@ def recommend_menus_with_weather(
                 "recommend_score": 85,
             }
         )
+        logger.info("recommend_menus.fallback_padding_added rank=%s", len(menus))
 
     for index, menu in enumerate(menus[:3], start=1):
         menu["rank"] = index
@@ -453,6 +518,11 @@ def make_restaurant_reason(
     The reason only uses the restaurant fields already provided. It does not
     invent ratings, reviews, popularity, waiting time, or other unavailable data.
     """
+    logger.info(
+        "make_restaurant_reason.start restaurant=%s matched_menu=%s",
+        restaurant.get("name", ""),
+        matched_menu,
+    )
     name = restaurant.get("name", "해당 음식점")
     category = restaurant.get("category", "")
     address = restaurant.get("road_address") or restaurant.get("address") or place
@@ -466,7 +536,7 @@ def make_restaurant_reason(
             rating_reason += f"과 평가수 {google_user_rating_count}건"
         rating_reason += "도 함께 참고했습니다."
 
-    return (
+    reason = (
         f"{name}은(는) {matched_menu} 메뉴와 연결해 검토한 음식점입니다. "
         f"카테고리 정보({category})와 위치({address})가 입력한 방문 지역 {place}와 맞고, "
         f"{people_count}명이 {time}에 식사하기 위한 예산({budget}) 조건을 함께 고려했습니다. "
@@ -474,3 +544,5 @@ def make_restaurant_reason(
         f"피해야 하는 항목({avoid_foods})은 메뉴 선택 시 제외 대상으로 보며, "
         f"날씨 조건도 함께 반영했습니다: {weather_summary}"
     )
+    logger.info("make_restaurant_reason.done chars=%s", len(reason))
+    return reason

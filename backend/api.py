@@ -46,7 +46,8 @@ class MenuRequest(BaseModel):
 
 def get_service_info() -> dict:
     """Return backend service information and frontend integration contract."""
-    return {
+    logger.info("get_service_info.start")
+    info = {
         "service_name": "오늘 뭐 먹지?",
         "description": (
             "날씨와 사용자 조건을 바탕으로 메뉴 3개를 추천하고, "
@@ -103,10 +104,13 @@ def get_service_info() -> dict:
             "LLM_MODEL": "향후 실제 LLM API 연동 시 사용할 모델명입니다. 현재는 mock LLM을 사용합니다.",
         },
     }
+    logger.info("get_service_info.done apis=%s", len(info["apis"]))
+    return info
 
 
 def _request_to_input_dict(data: MenuRequest) -> dict[str, Any]:
-    return {
+    logger.info("_request_to_input_dict.start place=%s", data.place)
+    result = {
         "date": data.date,
         "time": data.time,
         "place": data.place,
@@ -115,6 +119,8 @@ def _request_to_input_dict(data: MenuRequest) -> dict[str, Any]:
         "avoid_foods": data.avoid_foods,
         "budget": data.budget,
     }
+    logger.info("_request_to_input_dict.done keys=%s", len(result))
+    return result
 
 
 def recommend_menu_api(data: MenuRequest) -> dict:
@@ -129,6 +135,7 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     start = time.perf_counter()
 
     weather_start = time.perf_counter()
+    logger.info("recommend_api.weather_start")
     weather = get_weather(data.date, data.time, data.place)
     logger.info(
         "recommend_api.weather_done source=%s elapsed_seconds=%.3f",
@@ -137,14 +144,17 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     )
 
     restaurant_start = time.perf_counter()
+    logger.info("recommend_api.kakao_start")
     restaurant_candidates = search_nearby_restaurants(data.place, data.preferences)
     logger.info(
-        "recommend_api.kakao_done candidates=%s elapsed_seconds=%.3f",
+        "recommend_api.kakao_done candidates=%s candidate_names=%s elapsed_seconds=%.3f",
         len(restaurant_candidates),
+        [restaurant.get("name") for restaurant in restaurant_candidates[:5]],
         time.perf_counter() - restaurant_start,
     )
 
     google_start = time.perf_counter()
+    logger.info("recommend_api.google_start candidates=%s", len(restaurant_candidates))
     restaurant_candidates = enrich_restaurants_with_google_ratings(restaurant_candidates)
     logger.info(
         "recommend_api.google_done candidates=%s rated=%s elapsed_seconds=%.3f",
@@ -154,6 +164,7 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     )
 
     llm_start = time.perf_counter()
+    logger.info("recommend_api.menu_start candidates=%s", len(restaurant_candidates))
     menu_result = recommend_menus_with_weather(
         date=data.date,
         time=data.time,
@@ -167,13 +178,25 @@ def recommend_menu_api(data: MenuRequest) -> dict:
     )
     menus = menu_result["menus"]
     logger.info(
-        "recommend_api.menu_done source=%s menus=%s elapsed_seconds=%.3f",
+        "recommend_api.menu_done source=%s menus=%s menu_names=%s elapsed_seconds=%.3f",
         menu_result.get("source", "fallback"),
         len(menus),
+        [menu.get("name") for menu in menus],
         time.perf_counter() - llm_start,
     )
 
+    match_start = time.perf_counter()
+    logger.info("recommend_api.restaurant_match_start menus=%s candidates=%s", len(menus), len(restaurant_candidates))
     restaurants = match_restaurants_to_menus(restaurant_candidates, menus, data.preferences)
+    logger.info(
+        "recommend_api.restaurant_match_done restaurants=%s restaurant_names=%s elapsed_seconds=%.3f",
+        len(restaurants),
+        [restaurant.get("name") for restaurant in restaurants],
+        time.perf_counter() - match_start,
+    )
+
+    reason_start = time.perf_counter()
+    logger.info("recommend_api.restaurant_reason_start restaurants=%s", len(restaurants))
     for restaurant in restaurants:
         restaurant["selection_reason"] = make_restaurant_reason(
             restaurant=restaurant,
@@ -186,6 +209,11 @@ def recommend_menu_api(data: MenuRequest) -> dict:
             time=data.time,
             weather=weather,
         )
+    logger.info(
+        "recommend_api.restaurant_reason_done restaurants=%s elapsed_seconds=%.3f",
+        len(restaurants),
+        time.perf_counter() - reason_start,
+    )
 
     result = {
         "input": _request_to_input_dict(data),
