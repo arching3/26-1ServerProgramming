@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, root_validator
 
 from backend.ai import make_restaurant_reason, recommend_menus_with_weather
-from backend.place import search_restaurants
+from backend.place import match_restaurants_to_menus, search_nearby_restaurants
 from backend.weather import get_weather
 
 
@@ -87,7 +87,7 @@ def get_service_info() -> dict:
             "response_shape": {
                 "weather": "dict",
                 "menus": "list[dict]",
-                "restaurants": "list[dict]",
+                "restaurants": "list[dict] - LLM 추천과 연결된 실제 Kakao Map 상호명 후보",
             },
         },
         "environment_variables": {
@@ -114,6 +114,7 @@ def _request_to_input_dict(data: MenuRequest) -> dict[str, Any]:
 def recommend_menu_api(data: MenuRequest) -> dict:
     """Run the full recommendation flow and return internal response data."""
     weather = get_weather(data.date, data.time, data.place)
+    restaurant_candidates = search_nearby_restaurants(data.place)
 
     menu_result = recommend_menus_with_weather(
         date=data.date,
@@ -124,10 +125,11 @@ def recommend_menu_api(data: MenuRequest) -> dict:
         avoid_foods=data.avoid_foods,
         budget=data.budget,
         weather=weather,
+        restaurant_candidates=restaurant_candidates,
     )
     menus = menu_result["menus"]
 
-    restaurants = search_restaurants(data.place, menus)
+    restaurants = match_restaurants_to_menus(restaurant_candidates, menus)
     for restaurant in restaurants:
         restaurant["selection_reason"] = make_restaurant_reason(
             restaurant=restaurant,

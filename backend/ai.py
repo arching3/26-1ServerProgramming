@@ -38,6 +38,8 @@ MENU_OUTPUT_EXAMPLE = {
             "price_estimate": "1인 12000원 내외",
             "reason": "선호와 예산을 반영한 이유",
             "weather_reason": "날씨를 반영한 이유",
+            "restaurant_name": "실제 상호명",
+            "restaurant_reason": "후보 음식점 중 이 상호명을 고른 이유",
             "recommend_score": 95,
         }
     ]
@@ -99,6 +101,8 @@ def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
         category = str(item.get("category") or "기타").strip()
         reason = str(item.get("reason") or "").strip()
         weather_reason = str(item.get("weather_reason") or "").strip()
+        restaurant_name = str(item.get("restaurant_name") or item.get("restaurant") or "").strip()
+        restaurant_reason = str(item.get("restaurant_reason") or "").strip()
 
         if not name:
             continue
@@ -108,18 +112,22 @@ def _normalize_llm_menus(raw_menus: object, weather: dict) -> list[dict]:
             weather_reason = f"날씨 조건을 함께 반영했습니다: {weather_summary}"
         if weather_summary not in weather_reason:
             weather_reason = f"{weather_reason} 날씨 정보: {weather_summary}"
+        if restaurant_name and not restaurant_reason:
+            restaurant_reason = "Kakao Map 후보 상호명 중 메뉴와 조건에 맞는 곳입니다."
 
-        menus.append(
-            {
-                "rank": index,
-                "name": name,
-                "category": category,
-                "price_estimate": str(item.get("price_estimate") or "예산 내 선택 가능"),
-                "reason": reason,
-                "weather_reason": weather_reason,
-                "recommend_score": _to_int(item.get("recommend_score"), 97 - index * 3),
-            }
-        )
+        menu = {
+            "rank": index,
+            "name": name,
+            "category": category,
+            "price_estimate": str(item.get("price_estimate") or "예산 내 선택 가능"),
+            "reason": reason,
+            "weather_reason": weather_reason,
+            "recommend_score": _to_int(item.get("recommend_score"), 97 - index * 3),
+        }
+        if restaurant_name:
+            menu["restaurant_name"] = restaurant_name
+            menu["restaurant_reason"] = restaurant_reason
+        menus.append(menu)
 
     if len(menus) != 3:
         raise ValueError("LLM did not return exactly three menus.")
@@ -146,6 +154,7 @@ def _build_menu_prompt(
     avoid_foods: str,
     budget: str,
     weather: dict,
+    restaurant_candidates: list[dict] | None = None,
 ):
     """Build a compact prompt for Gemini menu recommendation."""
     if ChatPromptTemplate is None:
@@ -153,20 +162,34 @@ def _build_menu_prompt(
 
     weather_summary = weather.get("summary", "")
     output_example = json.dumps(MENU_OUTPUT_EXAMPLE, ensure_ascii=False)
+    restaurant_candidates = restaurant_candidates or []
+    restaurant_text = "\n".join(
+        (
+            f"- {restaurant.get('name', '')} | {restaurant.get('category', '')} | "
+            f"{restaurant.get('road_address') or restaurant.get('address') or place}"
+        )
+        for restaurant in restaurant_candidates[:10]
+        if restaurant.get("name")
+    )
+    if not restaurant_text:
+        restaurant_text = "후보 없음"
 
     return ChatPromptTemplate.from_messages(
         [
             (
                 "system",
                 "너는 메뉴 추천 AI다. 메뉴 3개를 JSON으로만 추천한다. "
-                "실제 식당 이름은 만들지 말고 메뉴명만 추천한다.",
+                "식당 상호명은 제공된 Kakao Map 후보에서만 고른다. "
+                "후보가 없으면 상호명을 비워둔다.",
             ),
             (
                 "human",
                 "조건: 날짜={date}, 시간={time}, 장소={place}, 인원={people_count}, "
                 "선호={preferences}, 제외={avoid_foods}, 예산={budget}, 날씨={weather_summary}\n"
+                "Kakao Map 음식점 후보:\n{restaurant_text}\n"
                 "규칙: 선호와 제외 음식을 우선 반영한다. "
                 "weather_reason에는 반드시 날씨 내용을 넣는다. "
+                "restaurant_name은 반드시 후보 줄의 첫 번째 값인 상호명 전체를 글자 하나도 바꾸지 말고 그대로 사용한다. "
                 "출력 JSON 형식: {output_example}",
             ),
         ]
@@ -179,6 +202,7 @@ def _build_menu_prompt(
         avoid_foods=avoid_foods,
         budget=budget,
         weather_summary=weather_summary,
+        restaurant_text=restaurant_text,
         output_example=output_example,
     )
 
@@ -200,6 +224,7 @@ def recommend_menus_with_weather(
     avoid_foods: str,
     budget: str,
     weather: dict,
+    restaurant_candidates: list[dict] | None = None,
 ) -> dict:
     """Recommend three menus based on request data and weather.
 
@@ -216,6 +241,7 @@ def recommend_menus_with_weather(
             avoid_foods=avoid_foods,
             budget=budget,
             weather=weather,
+            restaurant_candidates=restaurant_candidates,
         )
         menus = _recommend_menus_by_llm(prompt, weather)
         menus = _filter_avoided(menus, avoid_foods)
@@ -264,19 +290,23 @@ def recommend_menus_with_weather(
     else:
         weather_reason = "날씨가 무난해 선호 음식 종류와 예산 조건을 우선 반영했습니다."
 
+    restaurant_candidates = restaurant_candidates or []
     menus = []
     for index, (name, category, reason) in enumerate(candidates, start=1):
-        menus.append(
-            {
-                "rank": index,
-                "name": name,
-                "category": category,
-                "price_estimate": f"{max(9000, int(30000 / max(people_count, 1)))}원 내외",
-                "reason": reason,
-                "weather_reason": weather_reason,
-                "recommend_score": 97 - (index * 3),
-            }
-        )
+        menu = {
+            "rank": index,
+            "name": name,
+            "category": category,
+            "price_estimate": f"{max(9000, int(30000 / max(people_count, 1)))}원 내외",
+            "reason": reason,
+            "weather_reason": weather_reason,
+            "recommend_score": 97 - (index * 3),
+        }
+        if len(restaurant_candidates) >= index:
+            restaurant = restaurant_candidates[index - 1]
+            menu["restaurant_name"] = restaurant.get("name", "")
+            menu["restaurant_reason"] = "Kakao Map 후보 상호명 중 fallback 메뉴와 함께 검토한 곳입니다."
+        menus.append(menu)
 
     menus = _filter_avoided(menus, avoid_foods)
     while len(menus) < 3:
