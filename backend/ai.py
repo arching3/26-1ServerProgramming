@@ -8,7 +8,9 @@ The backend API should pass request data as a dictionary and call
 from __future__ import annotations
 
 import json
+import logging
 import os
+import time
 
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
@@ -29,6 +31,8 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+LLM_TIMEOUT_SECONDS = 60
+logger = logging.getLogger("backend.ai")
 
 MENU_OUTPUT_EXAMPLE = {
     "menus": [
@@ -57,12 +61,20 @@ def _create_llm():
         model = "gemini-2.5-flash",
         temperature=0.2,
         google_api_key=GOOGLE_API_KEY,
+        request_timeout=LLM_TIMEOUT_SECONDS,
     )
 
 
 def query(question : str) -> str:
+    logger.info("Gemini query.start chars=%s timeout=%s", len(question), LLM_TIMEOUT_SECONDS)
+    start = time.perf_counter()
     llm = _create_llm()
-    res = llm.invoke(question)
+    try:
+        res = llm.invoke(question)
+    except Exception:
+        logger.exception("Gemini query.failed elapsed_seconds=%.3f", time.perf_counter() - start)
+        raise
+    logger.info("Gemini query.done elapsed_seconds=%.3f", time.perf_counter() - start)
     return res.content
   
 def _contains_any(text: str, keywords: list[str]) -> bool:
@@ -140,9 +152,21 @@ def _recommend_menus_by_llm(prompt: str, weather: dict) -> list[dict]:
     if ChatPromptTemplate is None or JsonOutputParser is None:
         raise RuntimeError("langchain_core package is not installed.")
 
+    logger.info("LLM menu recommendation.start")
+    start = time.perf_counter()
     chain = prompt | _create_llm() | JsonOutputParser()
-    parsed = chain.invoke({})
-    return _normalize_llm_menus(parsed, weather)
+    try:
+        parsed = chain.invoke({})
+        menus = _normalize_llm_menus(parsed, weather)
+    except Exception:
+        logger.exception("LLM menu recommendation.failed elapsed_seconds=%.3f", time.perf_counter() - start)
+        raise
+    logger.info(
+        "LLM menu recommendation.done elapsed_seconds=%.3f menu_count=%s",
+        time.perf_counter() - start,
+        len(menus),
+    )
+    return menus
 
 
 def _format_restaurant_candidate(restaurant: dict, place: str) -> str:
@@ -186,6 +210,13 @@ def _build_menu_prompt(
     )
     if not restaurant_text:
         restaurant_text = "후보 없음"
+    logger.info(
+        "LLM prompt.build place=%s candidates=%s restaurant_text_chars=%s output_example_chars=%s",
+        place,
+        len(restaurant_candidates),
+        len(restaurant_text),
+        len(output_example),
+    )
 
     return ChatPromptTemplate.from_messages(
         [
@@ -246,6 +277,13 @@ def recommend_menus_with_weather(
     the existing rule-based fallback keeps the API response stable.
     """
     try:
+        logger.info(
+            "recommend_menus.start place=%s people=%s preferences=%s candidates=%s",
+            place,
+            people_count,
+            preferences,
+            len(restaurant_candidates or []),
+        )
         prompt = _build_menu_prompt(
             date=date,
             time=time,
@@ -262,10 +300,12 @@ def recommend_menus_with_weather(
         if len(menus) >= 3:
             for index, menu in enumerate(menus[:3], start=1):
                 menu["rank"] = index
+            logger.info("recommend_menus.gemini_success menu_count=%s", len(menus[:3]))
             return {"menus": menus[:3], "source": "gemini"}
     except Exception:
-        pass
+        logger.exception("recommend_menus.gemini_failed_using_fallback")
 
+    logger.info("recommend_menus.fallback_start preferences=%s", preferences)
     condition = weather.get("condition", "")
     temperature = int(weather.get("temperature", 20))
     rain_probability = int(weather.get("rain_probability", 0))
@@ -344,6 +384,7 @@ def recommend_menus_with_weather(
     for index, menu in enumerate(menus[:3], start=1):
         menu["rank"] = index
 
+    logger.info("recommend_menus.fallback_done menu_count=%s", len(menus[:3]))
     return {"menus": menus[:3]}
 
 

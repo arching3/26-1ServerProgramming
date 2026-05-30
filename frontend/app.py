@@ -1,12 +1,14 @@
 import gradio as gr
 import logging
 import sys
+import time
 from pathlib import Path
 
 import requests
 
 # 백엔드 API 주소
 API_URL = "http://127.0.0.1:8000/api/recommend-menu"
+API_TIMEOUT_SECONDS = 60
 
 
 def configure_logging():
@@ -202,18 +204,21 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
     )
 
     # 2. API 요청
+    start = time.perf_counter()
     try:
-        res = requests.post(API_URL, json=payload, timeout=10)
+        logger.info("Frontend API call.start url=%s timeout=%s", API_URL, API_TIMEOUT_SECONDS)
+        res = requests.post(API_URL, json=payload, timeout=API_TIMEOUT_SECONDS)
         res.raise_for_status()
         data = res.json()
         logger.info(
-            "Frontend recommendation response menus=%s restaurants=%s",
+            "Frontend recommendation response menus=%s restaurants=%s elapsed_seconds=%.3f",
             len(data.get("menus", [])),
             len(data.get("restaurants", [])),
+            time.perf_counter() - start,
         )
 
     except Exception as e:
-        logger.exception("Frontend API request failed")
+        logger.exception("Frontend API request failed elapsed_seconds=%.3f", time.perf_counter() - start)
         return f"""
         <div class='card'>
             <h2>⚠️ API 연결 오류</h2>

@@ -1,16 +1,20 @@
 from dotenv import dotenv_values
 from datetime import datetime, timedelta
+import logging
 import os
+import time
 from urllib.parse import unquote
 import requests
 
-from utils.coordinate import coord2grid
+from backend.utils.coordinate import coord2grid
 
 
 KEYS = {
     **dotenv_values(),
     **dotenv_values(os.path.join(os.path.dirname(__file__), ".env")),
 }
+REQUEST_TIMEOUT_SECONDS = 60
+logger = logging.getLogger("backend.reader")
 
 
 class KakaoMapAPIReader:
@@ -27,6 +31,8 @@ class KakaoMapAPIReader:
 
     def search_place(self, place: str) -> dict:
         """Return the first Kakao keyword search document for a place string."""
+        logger.info("Kakao place.search_start place=%s timeout=%s", place, REQUEST_TIMEOUT_SECONDS)
+        start = time.perf_counter()
         headers = {
             "Authorization": f"KakaoAK {self.__api_key.strip()}"
         }
@@ -34,13 +40,29 @@ class KakaoMapAPIReader:
             "query": place
         }
 
-        res = requests.get(self.url, headers=headers, params=params, timeout=5)
-        res.raise_for_status()
+        try:
+            res = requests.get(
+                self.url,
+                headers=headers,
+                params=params,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            res.raise_for_status()
+        except Exception:
+            logger.exception("Kakao place.search_failed place=%s elapsed_seconds=%.3f", place, time.perf_counter() - start)
+            raise
 
         documents = res.json()["documents"]
         if not documents:
             raise ValueError(f"장소 검색 결과 없음: {place}")
 
+        logger.info(
+            "Kakao place.search_done place=%s status=%s documents=%s elapsed_seconds=%.3f",
+            place,
+            res.status_code,
+            len(documents),
+            time.perf_counter() - start,
+        )
         return documents[0]
 
     def get_coord_place_nxny(self, place: str) -> tuple[int, int]:
@@ -96,8 +118,18 @@ class ShortWeatherAPIReader():
                 summary:str, source:str, is_mock:bool
             }
         """
+        logger.info("KMA weather.get_start date=%s time=%s place=%s", date, time, place)
+        start = time.perf_counter()
         base_date, base_time = self._get_latest_basetime()
         nx, ny = self.kakao_reader.get_coord_place_nxny(place)
+        logger.info(
+            "KMA weather.grid_resolved place=%s nx=%s ny=%s base_date=%s base_time=%s",
+            place,
+            nx,
+            ny,
+            base_date,
+            base_time,
+        )
 
         params = {
             "serviceKey": unquote(self.__api_key.strip()),
@@ -110,8 +142,17 @@ class ShortWeatherAPIReader():
             "ny": ny,
         }
 
-        res = requests.get(self.url, params=params, timeout=5)
-        res = res.json()["response"]
+        try:
+            response = requests.get(
+                self.url,
+                params=params,
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+            res = response.json()["response"]
+        except Exception:
+            logger.exception("KMA weather.request_failed elapsed_seconds=%.3f", time.perf_counter() - start)
+            raise
         header, body = (res["header"], res["body"])
         item_list = body["items"]["item"]
         parsing = {}
@@ -170,4 +211,11 @@ class ShortWeatherAPIReader():
         }
         # endregion
 
+        logger.info(
+            "KMA weather.get_done condition=%s temperature=%s rain_probability=%s elapsed_seconds=%.3f",
+            condition,
+            temperature,
+            rain_probability,
+            time.perf_counter() - start,
+        )
         return rst

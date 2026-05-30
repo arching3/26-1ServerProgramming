@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -11,6 +13,8 @@ load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 KAKAO_KEYWORD_SEARCH_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+REQUEST_TIMEOUT_SECONDS = 60
+logger = logging.getLogger("backend.place")
 
 
 def _mock_restaurants(place: str, menus: list[dict] | None, size: int) -> list[dict]:
@@ -40,16 +44,30 @@ def _call_kakao_keyword(query: str, size: int) -> list[dict]:
     if not api_key:
         raise RuntimeError("KAKAO_REST_API_KEY is missing")
 
+    logger.info("Kakao keyword.start query=%s size=%s timeout=%s", query, size, REQUEST_TIMEOUT_SECONDS)
+    start = time.perf_counter()
     headers = {"Authorization": f"KakaoAK {api_key}"}
     params = {"query": query, "size": size}
-    response = requests.get(
-        KAKAO_KEYWORD_SEARCH_URL,
-        headers=headers,
-        params=params,
-        timeout=5,
+    try:
+        response = requests.get(
+            KAKAO_KEYWORD_SEARCH_URL,
+            headers=headers,
+            params=params,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        documents = response.json().get("documents", [])
+    except Exception:
+        logger.exception("Kakao keyword.failed query=%s elapsed_seconds=%.3f", query, time.perf_counter() - start)
+        raise
+    logger.info(
+        "Kakao keyword.done query=%s status=%s documents=%s elapsed_seconds=%.3f",
+        query,
+        response.status_code,
+        len(documents),
+        time.perf_counter() - start,
     )
-    response.raise_for_status()
-    return response.json().get("documents", [])
+    return documents
 
 
 def _convert_kakao_place(document: dict, matched_menu: str) -> dict:
@@ -90,6 +108,8 @@ def _append_unique_restaurants(
 
 def search_nearby_restaurants(place: str, size: int = 10) -> list[dict]:
     """Search restaurant candidates around a frontend place string."""
+    logger.info("nearby restaurants.search_start place=%s size=%s", place, size)
+    start = time.perf_counter()
     restaurants: list[dict] = []
     seen_keys: set[str] = set()
     queries = [
@@ -108,10 +128,23 @@ def search_nearby_restaurants(place: str, size: int = 10) -> list[dict]:
                 matched_menu="",
                 size=size,
             ):
+                logger.info(
+                    "nearby restaurants.search_done place=%s count=%s elapsed_seconds=%.3f",
+                    place,
+                    len(restaurants),
+                    time.perf_counter() - start,
+                )
                 return restaurants
     except Exception:
+        logger.exception("nearby restaurants.search_failed_using_mock place=%s", place)
         return _mock_restaurants(place, None, size)
 
+    logger.info(
+        "nearby restaurants.search_done place=%s count=%s elapsed_seconds=%.3f",
+        place,
+        len(restaurants),
+        time.perf_counter() - start,
+    )
     return restaurants or _mock_restaurants(place, None, size)
 
 
@@ -121,6 +154,12 @@ def match_restaurants_to_menus(
     size: int = 5,
 ) -> list[dict]:
     """Return Kakao restaurant candidates linked to LLM menu recommendations."""
+    logger.info(
+        "restaurants.match_start restaurants=%s menus=%s size=%s",
+        len(restaurants),
+        len(menus),
+        size,
+    )
     matched = []
     seen_keys = set()
 
@@ -158,6 +197,7 @@ def match_restaurants_to_menus(
         selected["matched_menu"] = menu.get("name", "")
         matched.append(selected)
         if len(matched) >= size:
+            logger.info("restaurants.match_done count=%s", len(matched))
             return matched
 
     for restaurant in restaurants:
@@ -167,8 +207,10 @@ def match_restaurants_to_menus(
         seen_keys.add(dedupe_key)
         matched.append(dict(restaurant))
         if len(matched) >= size:
+            logger.info("restaurants.match_done count=%s", len(matched))
             return matched
 
+    logger.info("restaurants.match_done count=%s", len(matched[:size]))
     return matched[:size]
 
 

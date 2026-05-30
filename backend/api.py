@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 from pydantic import BaseModel, root_validator
@@ -10,6 +12,8 @@ from backend.ai import make_restaurant_reason, recommend_menus_with_weather
 from backend.google_places import enrich_restaurants_with_google_ratings
 from backend.place import match_restaurants_to_menus, search_nearby_restaurants
 from backend.weather import get_weather
+
+logger = logging.getLogger("backend.api")
 
 
 class MenuRequest(BaseModel):
@@ -115,10 +119,41 @@ def _request_to_input_dict(data: MenuRequest) -> dict[str, Any]:
 
 def recommend_menu_api(data: MenuRequest) -> dict:
     """Run the full recommendation flow and return internal response data."""
-    weather = get_weather(data.date, data.time, data.place)
-    restaurant_candidates = search_nearby_restaurants(data.place)
-    restaurant_candidates = enrich_restaurants_with_google_ratings(restaurant_candidates)
+    logger.info(
+        "recommend_api.start place=%s people=%s preferences=%s budget=%s",
+        data.place,
+        data.people_count,
+        data.preferences,
+        data.budget,
+    )
+    start = time.perf_counter()
 
+    weather_start = time.perf_counter()
+    weather = get_weather(data.date, data.time, data.place)
+    logger.info(
+        "recommend_api.weather_done source=%s elapsed_seconds=%.3f",
+        weather.get("source"),
+        time.perf_counter() - weather_start,
+    )
+
+    restaurant_start = time.perf_counter()
+    restaurant_candidates = search_nearby_restaurants(data.place)
+    logger.info(
+        "recommend_api.kakao_done candidates=%s elapsed_seconds=%.3f",
+        len(restaurant_candidates),
+        time.perf_counter() - restaurant_start,
+    )
+
+    google_start = time.perf_counter()
+    restaurant_candidates = enrich_restaurants_with_google_ratings(restaurant_candidates)
+    logger.info(
+        "recommend_api.google_done candidates=%s rated=%s elapsed_seconds=%.3f",
+        len(restaurant_candidates),
+        sum(1 for restaurant in restaurant_candidates if restaurant.get("google_rating") is not None),
+        time.perf_counter() - google_start,
+    )
+
+    llm_start = time.perf_counter()
     menu_result = recommend_menus_with_weather(
         date=data.date,
         time=data.time,
@@ -131,6 +166,12 @@ def recommend_menu_api(data: MenuRequest) -> dict:
         restaurant_candidates=restaurant_candidates,
     )
     menus = menu_result["menus"]
+    logger.info(
+        "recommend_api.menu_done source=%s menus=%s elapsed_seconds=%.3f",
+        menu_result.get("source", "fallback"),
+        len(menus),
+        time.perf_counter() - llm_start,
+    )
 
     restaurants = match_restaurants_to_menus(restaurant_candidates, menus)
     for restaurant in restaurants:
@@ -146,9 +187,16 @@ def recommend_menu_api(data: MenuRequest) -> dict:
             weather=weather,
         )
 
-    return {
+    result = {
         "input": _request_to_input_dict(data),
         "weather": weather,
         "menus": menus,
         "restaurants": restaurants,
     }
+    logger.info(
+        "recommend_api.done menus=%s restaurants=%s elapsed_seconds=%.3f",
+        len(menus),
+        len(restaurants),
+        time.perf_counter() - start,
+    )
+    return result
