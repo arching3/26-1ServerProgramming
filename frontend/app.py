@@ -6,34 +6,84 @@ API_URL = "http://127.0.0.1:8000/api/recommend-menu"
 
 # CSS 디자인
 css = """
-body { background: #fafbff; }
+:root {
+    color-scheme: light;
+    --app-bg: #f6f8fb;
+    --panel-bg: #ffffff;
+    --panel-soft: #f8fafc;
+    --text-main: #111827;
+    --text-muted: #4b5563;
+    --border: #e5e7eb;
+    --badge-bg: #e8f2ff;
+    --badge-text: #155e75;
+    --accent: #2563eb;
+    --accent-strong: #0f766e;
+    --card-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+    --menu-bg: linear-gradient(135deg, #ffffff, #eef7ff);
+}
+
+.dark {
+    color-scheme: dark;
+    --app-bg: #111827;
+    --panel-bg: #1f2937;
+    --panel-soft: #273449;
+    --text-main: #f9fafb;
+    --text-muted: #cbd5e1;
+    --border: #374151;
+    --badge-bg: #123344;
+    --badge-text: #7dd3fc;
+    --accent: #60a5fa;
+    --accent-strong: #2dd4bf;
+    --card-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+    --menu-bg: linear-gradient(135deg, #1f2937, #243042);
+}
+
+body,
+.gradio-container {
+    background: var(--app-bg) !important;
+    color: var(--text-main) !important;
+}
 
 #title {
     font-size: 32px;
     font-weight: 800;
-    color: #111827;
+    color: var(--text-main);
+}
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.toolbar .theme-toggle {
+    min-width: 170px;
 }
 
 .card {
-    border: 1px solid #e5e7eb;
-    border-radius: 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     padding: 20px;
-    background: white;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    background: var(--panel-bg);
+    color: var(--text-main);
+    box-shadow: var(--card-shadow);
 }
 
 .menu-card {
-    border: 1px solid #ddd6fe;
-    border-radius: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
     padding: 20px;
-    background: linear-gradient(135deg, #ffffff, #f7f5ff);
+    background: var(--menu-bg);
+    color: var(--text-main);
     min-height: 150px;
 }
 
 .badge {
     display: inline-block;
-    background: #ede9fe;
-    color: #4f46e5;
+    background: var(--badge-bg);
+    color: var(--badge-text);
     padding: 5px 10px;
     border-radius: 8px;
     margin-right: 6px;
@@ -42,7 +92,7 @@ body { background: #fafbff; }
 
 .rank {
     display: inline-block;
-    background: #5b4bff;
+    background: var(--accent);
     color: white;
     border-radius: 999px;
     width: 34px;
@@ -54,17 +104,42 @@ body { background: #fafbff; }
 }
 
 .restaurant {
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--border);
     padding: 16px 0;
 }
 
 .main-btn button {
-    background: linear-gradient(90deg, #5b4bff, #8b5cf6) !important;
+    background: linear-gradient(90deg, var(--accent), var(--accent-strong)) !important;
     color: white !important;
     font-weight: 700 !important;
     border-radius: 12px !important;
 }
+
+.gradio-container input,
+.gradio-container textarea,
+.gradio-container select {
+    background: var(--panel-bg) !important;
+    color: var(--text-main) !important;
+    border-color: var(--border) !important;
+}
+
+.gradio-container label,
+.gradio-container .wrap,
+.gradio-container .prose,
+.gradio-container p,
+.gradio-container h2,
+.gradio-container h3 {
+    color: var(--text-main) !important;
+}
+
+.gradio-container a {
+    color: var(--accent) !important;
+}
 """
+
+
+def keep_theme_value(mode):
+    return mode
 
 # 데이터를 매핑하고 API와 통신하는 함수
 def recommend(people, budget, date, time, cuisines, avoid_foods, region):
@@ -186,8 +261,15 @@ def recommend(people, budget, date, time, cuisines, avoid_foods, region):
 
 
 # UI 구성
-with gr.Blocks(css=css, title="오늘 뭐 먹지?") as demo:
-    gr.HTML("<div id='title'>오늘 뭐 먹지? 🍽️</div>")
+with gr.Blocks(title="오늘 뭐 먹지?", elem_classes=["light"]) as demo:
+    with gr.Row(elem_classes="toolbar"):
+        gr.HTML("<div id='title'>오늘 뭐 먹지? 🍽️</div>")
+        theme_mode = gr.Radio(
+            choices=["라이트", "다크"],
+            value="라이트",
+            label="테마",
+            elem_classes="theme-toggle",
+        )
 
     with gr.Row():
         with gr.Column(scale=1):
@@ -218,6 +300,21 @@ with gr.Blocks(css=css, title="오늘 뭐 먹지?") as demo:
         inputs=[people, budget, date, time, cuisines, avoid_foods, region],
         outputs=output
     )
+    theme_mode.change(
+        fn=keep_theme_value,
+        inputs=theme_mode,
+        outputs=theme_mode,
+        js="""
+        (mode) => {
+            const root = document.querySelector('.gradio-container');
+            if (root) {
+                root.classList.toggle('dark', mode === '다크');
+                root.classList.toggle('light', mode !== '다크');
+            }
+            return mode;
+        }
+        """,
+    )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(css=css)
