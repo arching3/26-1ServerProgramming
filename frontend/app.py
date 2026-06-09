@@ -43,63 +43,165 @@ logger = configure_logging()
 
 # CSS 디자인
 css = """
-body { background: #fafbff; }
+.gradio-container { 
+    background: linear-gradient(180deg, #ffffff 0%, #faf9ff 100%) !important;
+}
+
+.gradio-container span {
+    color: #000000 !important;
+    font-weight: 700 !important;
+}
+
+input[type="checkbox"]:checked {
+    accent-color: #5b4bff !important;
+}
+
+textarea:focus,
+input:focus {
+    border-color: #5b4bff !important;
+    box-shadow: 0 0 0 3px rgba(91, 75, 255, 0.15) !important;
+}
 
 #title {
-    font-size: 32px;
-    font-weight: 800;
-    color: #111827;
+    font-size: 45px;
+    font-weight: 700;
+    color: #2d2d38;
+    margin-bottom: 36px;
+    padding-top: 24px;
+    text-align: center;
+    letter-spacing: -0.5px;
+    text-shadow: none;
 }
 
 .card {
-    border: 1px solid #e5e7eb;
-    border-radius: 18px;
-    padding: 20px;
-    background: white;
-    box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+    border: 1px solid rgba(91,75,255,0.12) !important;
+    border-radius: 24px !important;
+    padding: 24px !important;
+    background: rgba(255,255,255,0.88);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 30px rgba(91,75,255,0.08) !important;
+}
+
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .menu-card {
-    border: 1px solid #ddd6fe;
-    border-radius: 16px;
-    padding: 20px;
-    background: linear-gradient(135deg, #ffffff, #f7f5ff);
+    position: relative;
+    overflow: hidden;
+    border: 2px solid #ede9fe;
+    border-radius: 20px !important;
+    padding: 24px 20px 20px 20px;
+    background: #ffffff;
     min-height: 150px;
+    transition: all 0.2s ease;
+    animation: fadeUp 0.45s ease;
+}
+
+.menu-card::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 5px;
+    background: linear-gradient(90deg, #5b4bff, #a78bfa);
+}
+
+.menu-card:hover {
+    transform: translateY(-3px);
+    background: rgba(91, 75, 255, 0.035);
+    box-shadow: 0 10px 20px rgba(91, 75, 255, 0.10) !important;
+    border-color: #5b4bff !important;
 }
 
 .badge {
     display: inline-block;
     background: #ede9fe;
     color: #4f46e5;
-    padding: 5px 10px;
-    border-radius: 8px;
+    padding: 4px 12px;
+    border-radius: 20px;
     margin-right: 6px;
-    font-size: 13px;
+    font-size: 12px;
+    font-weight: bold;
 }
 
 .rank {
     display: inline-block;
-    background: #5b4bff;
-    color: white;
-    border-radius: 999px;
-    width: 34px;
-    height: 34px;
+    background: linear-gradient(135deg, #7c6bff, #5b4bff);
+    color: white !important;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
     text-align: center;
-    line-height: 34px;
+    line-height: 30px;
     font-weight: bold;
     margin-right: 10px;
+    box-shadow: 0 4px 10px rgba(91,75,255,0.25);
+}
+
+.main-btn {
+    position: relative;
+    overflow: hidden;
+    background: #5b4bff !important;
+    color: white !important;
+    font-weight: 700 !important;
+    border-radius: 16px !important;
+    border: 2px solid transparent !important;
+    transition: all 0.25s ease !important;
+    height: 50px !important;
+}
+
+.main-btn {
+    background: #5b4bff !important;
+    color: white !important;
+    font-weight: 700 !important;
+    border-radius: 16px !important;
+    border: none !important;
+    transition:
+        background 0.2s ease,
+        transform 0.2s ease,
+        box-shadow 0.2s ease !important;
+    height: 50px !important;
+}
+
+.main-btn:hover {
+    background: #4f46e5 !important;
+    transform: translateY(-1px);
+    box-shadow:
+        0 6px 14px
+        rgba(91,75,255,0.18) !important;
 }
 
 .restaurant {
+    border: 2px solid transparent;
     border-bottom: 1px solid #e5e7eb;
-    padding: 16px 0;
+    border-radius: 10px;
+    padding: 16px;
+    background: white;
+    transition: all 0.2s ease;
 }
 
-.main-btn button {
-    background: linear-gradient(90deg, #5b4bff, #8b5cf6) !important;
-    color: white !important;
+.restaurant:hover {
+    border-color: #5b4bff;
+    background-color: rgba(91, 75, 255, 0.06);
+    box-shadow: 0 6px 14px rgba(91, 75, 255, 0.08);
+}
+
+.gradio-container h2 {
+    font-size: 30px !important;
     font-weight: 700 !important;
-    border-radius: 12px !important;
+    color: #2d2d38 !important;
+    margin-top: 12px !important;
+    margin-bottom: 20px !important;
+    letter-spacing: -0.4px;
 }
 """
 
